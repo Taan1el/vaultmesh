@@ -1,0 +1,13 @@
+services:
+  vaultmesh:
+    build: .
+    ports:
+      - "4005:4005"
+    volumes:
+      - vaultmesh-data:/app/data
+    environment:
+      NODE_ENV: production
+      PORT: 4005
+
+volumes:
+  vaultmesh-data:

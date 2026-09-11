@@ -1,0 +1,37 @@
+{
+  "name": "vaultmesh",
+  "version": "1.0.0",
+  "description": "Cloud-Native Secrets Manager, KMS Envelope Encryption & Dynamic Leasing Engine",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "server",
+    "client"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace=server & npm run dev --workspace=client",
+    "build": "npm run build:server && npm run build:client",
+    "build:server": "npm run build --workspace=server",
+    "build:client": "npm run build --workspace=client",
+    "test": "npm run test:server && npm run test:client",
+    "test:server": "npm run test --workspace=server",
+    "test:client": "npm run test --workspace=client",
+    "lint": "npm run lint:server && npm run lint:client",
+    "lint:server": "npm run lint --workspace=server",
+    "lint:client": "npm run lint --workspace=client"
+  },
+  "keywords": [
+    "secrets-manager",
+    "kms",
+    "envelope-encryption",
+    "aes-256-gcm",
+    "key-rotation",
+    "shamir-secret-sharing",
+    "dynamic-leases",
+    "tamper-evident-audit",
+    "react19",
+    "sqlite-wal"
+  ],
+  "author": "Taaneiel",
+  "license": "MIT"
+}
