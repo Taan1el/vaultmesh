@@ -2,12 +2,11 @@ services:
   vaultmesh:
     build: .
     ports:
-      - "4005:4005"
+      # The API has no authentication, so it is only published on this machine.
+      - "127.0.0.1:4005:4005"
     volumes:
       - vaultmesh-data:/app/data
-    environment:
-      NODE_ENV: production
-      PORT: 4005
+    restart: unless-stopped
 
 volumes:
   vaultmesh-data:
