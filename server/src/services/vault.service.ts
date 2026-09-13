@@ -19,6 +19,7 @@ import { badRequest, conflict, notFound, vaultSealed, VaultError } from '../../.
 import { parseCreateSecretInput, parseRenewIncrement, parseSecretPath } from '../../../shared/validation.js';
 import { formatShare, type SharePoint } from '../../../shared/shamir.js';
 import { assertLeaseRevocable, LEASE_MAX_RENEWALS, planLeaseRenewal } from '../../../shared/leases.js';
+import { auditChainInputs, checkAuditChain, GENESIS_HASH } from '../../../shared/audit.js';
 
 const UNSEAL_THRESHOLD = 3;
 const TOTAL_SHARES = 5;
@@ -785,7 +786,7 @@ export class VaultService {
   }): AuditEntry {
     const rawDb = this.db.getDb();
     const lastRow = rawDb.prepare('SELECT entry_hash FROM audit_log ORDER BY rowid DESC LIMIT 1').get() as { entry_hash: string } | undefined;
-    const previousHash = lastRow?.entry_hash || '0'.repeat(64);
+    const previousHash = lastRow?.entry_hash || GENESIS_HASH;
 
     const id = `aud_${crypto.randomBytes(8).toString('hex')}`;
     const timestamp = new Date().toISOString();
@@ -801,7 +802,7 @@ export class VaultService {
       details: params.details,
     };
 
-    const entryHash = EnvelopeEncryption.computeAuditHash(previousHash, payload);
+    const entryHash = EnvelopeEncryption.computeAuditHash(previousHash, { ...payload, secretPath: params.secretPath });
 
     rawDb.prepare(`
       INSERT INTO audit_log (id, timestamp, action, secret_path, actor, ip, status, details, previous_hash, entry_hash)
@@ -830,65 +831,29 @@ export class VaultService {
   getAuditLog(limit = 100): AuditEntry[] {
     const rawDb = this.db.getDb();
     const rows = rawDb.prepare('SELECT * FROM audit_log ORDER BY rowid DESC LIMIT ?').all(limit) as any[];
-    return rows.map((r) => ({
-      id: r.id,
-      timestamp: r.timestamp,
-      action: r.action,
-      secretPath: r.secret_path,
-      actor: r.actor,
-      ip: r.ip,
-      status: r.status,
-      details: r.details,
-      previousHash: r.previous_hash,
-      entryHash: r.entry_hash,
-    }));
+    return rows.map((r) => this.toAuditEntry(r));
   }
 
   verifyAuditLedger(): AuditVerificationResult {
     const rawDb = this.db.getDb();
     const rows = rawDb.prepare('SELECT * FROM audit_log ORDER BY rowid ASC').all() as any[];
+    const entries = rows.map((r) => this.toAuditEntry(r));
+    const hashes = auditChainInputs(entries).map((input) => crypto.createHash('sha256').update(input).digest('hex'));
+    return checkAuditChain(entries, hashes, new Date().toISOString());
+  }
 
-    let expectedPrevHash = '0'.repeat(64);
-
-    for (let i = 0; i < rows.length; i++) {
-      const entry = rows[i];
-      if (entry.previous_hash !== expectedPrevHash) {
-        return {
-          isValid: false,
-          totalEntries: rows.length,
-          brokenIndex: i,
-          verifiedAt: new Date().toISOString(),
-        };
-      }
-
-      const payload = {
-        id: entry.id,
-        timestamp: entry.timestamp,
-        action: entry.action,
-        secretPath: entry.secret_path || null,
-        actor: entry.actor,
-        ip: entry.ip,
-        status: entry.status,
-        details: entry.details,
-      };
-
-      const computedHash = EnvelopeEncryption.computeAuditHash(expectedPrevHash, payload);
-      if (computedHash !== entry.entry_hash) {
-        return {
-          isValid: false,
-          totalEntries: rows.length,
-          brokenIndex: i,
-          verifiedAt: new Date().toISOString(),
-        };
-      }
-
-      expectedPrevHash = entry.entry_hash;
-    }
-
+  private toAuditEntry(row: any): AuditEntry {
     return {
-      isValid: true,
-      totalEntries: rows.length,
-      verifiedAt: new Date().toISOString(),
+      id: row.id,
+      timestamp: row.timestamp,
+      action: row.action,
+      ...(row.secret_path ? { secretPath: row.secret_path } : {}),
+      actor: row.actor,
+      ip: row.ip,
+      status: row.status,
+      details: row.details,
+      previousHash: row.previous_hash,
+      entryHash: row.entry_hash,
     };
   }
 

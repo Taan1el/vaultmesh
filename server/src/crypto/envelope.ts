@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import { formatWrappedKey, parseWrappedKey } from '../../../shared/encoding.js';
+import { auditHashInput, type AuditEntryFields } from '../../../shared/audit.js';
 
 export interface EnvelopeEncryptedPackage {
   kekVersion: number;
@@ -107,8 +108,8 @@ export class EnvelopeEncryption {
   }
 
   /**
-   * Re-wrap an encrypted DEK with a new KEK version WITHOUT exposing or decrypting the underlying plaintext!
-   * This is the cornerstone of zero-downtime key rotation in enterprise KMS.
+   * Re-wrap an encrypted DEK with a new KEK. The DEK is unwrapped in memory,
+   * but the secret payload is never decrypted and its ciphertext does not change.
    */
   static rewrapDek(wrappedDekStr: string, oldKek: Buffer, newKek: Buffer): string {
     const dek = this.unwrapKey(wrappedDekStr, oldKek);
@@ -120,13 +121,9 @@ export class EnvelopeEncryption {
   }
 
   /**
-   * Compute a deterministic SHA-256 hash for audit ledger chaining
+   * SHA-256 hash that links an audit entry to the entry before it.
    */
-  static computeAuditHash(previousHash: string, entryPayload: Record<string, any>): string {
-    const serialized = JSON.stringify(entryPayload, Object.keys(entryPayload).sort());
-    return crypto
-      .createHash('sha256')
-      .update(`${previousHash}|${serialized}`)
-      .digest('hex');
+  static computeAuditHash(previousHash: string, entry: AuditEntryFields): string {
+    return crypto.createHash('sha256').update(auditHashInput(previousHash, entry)).digest('hex');
   }
 }
