@@ -1,5 +1,4 @@
 import express, { NextFunction, Request, Response } from 'express';
-import cors from 'cors';
 import fs from 'node:fs';
 import path from 'node:path';
 import { VaultDatabase } from './db/database.js';
@@ -20,13 +19,28 @@ export function createApp(dbPath?: string, clientDir: string = defaultClientDir)
   const service = new VaultService(db);
   const controller = new VaultController(service);
 
-  app.use(cors());
+  app.disable('x-powered-by');
+  app.use((_req, res, next) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    next();
+  });
   app.use(express.json());
 
   app.get('/health', (_req, res) => {
     res.json({ status: 'ok', service: 'vaultmesh' });
   });
 
+  // There is no authentication, so two cheap guards matter for a local API:
+  // no CORS headers (other sites cannot read responses), and POST bodies must be
+  // JSON, which a cross-site form cannot send without a CORS preflight.
+  app.use('/api', (req, res, next) => {
+    res.setHeader('Cache-Control', 'no-store');
+    if (req.method === 'POST' && !req.is('application/json')) {
+      res.status(415).json({ error: 'POST requests must use Content-Type: application/json' });
+      return;
+    }
+    next();
+  });
   app.use('/api', createVaultRouter(controller));
   app.use('/api', (_req, res) => {
     res.status(404).json({ error: 'Not found' });

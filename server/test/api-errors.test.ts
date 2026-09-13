@@ -48,11 +48,11 @@ describe('API error responses', () => {
     await t.request.post('/api/vault/seal').expect(200);
 
     for (const call of [
-      t.request.post('/api/vault/keks/rotate'),
-      t.request.post('/api/vault/keks/rewrap'),
-      t.request.post('/api/secrets').send({ path: 'secret/a', name: 'A', plaintext: 'x' }),
+      () => t.request.post('/api/vault/keks/rotate'),
+      () => t.request.post('/api/vault/keks/rewrap'),
+      () => t.request.post('/api/secrets').send({ path: 'secret/a', name: 'A', plaintext: 'x' }),
     ]) {
-      const res = await call;
+      const res = await call();
       expect(res.status).toBe(503);
       expect(res.body.error).toMatch(/sealed/i);
     }
