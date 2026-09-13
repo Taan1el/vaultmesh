@@ -15,6 +15,7 @@ import {
   AuditAction,
   AuditVerificationResult,
 } from '../../../shared/types.js';
+import { badRequest, conflict, notFound, vaultSealed, VaultError } from '../../../shared/errors.js';
 
 export class VaultService {
   private db: VaultDatabase;
@@ -202,7 +203,11 @@ export class VaultService {
       };
     }
 
-    ShamirSecretSharing.parseShare(shareStr);
+    try {
+      ShamirSecretSharing.parseShare(shareStr);
+    } catch (err) {
+      throw badRequest(err instanceof Error ? err.message : 'Invalid share');
+    }
     this.submittedShares.add(shareStr.trim());
 
     if (this.submittedShares.size >= 3) {
@@ -229,15 +234,15 @@ export class VaultService {
           sharesRemaining: 0,
           unsealed: true,
         };
-      } catch (err: any) {
+      } catch {
         this.recordAudit({
           action: 'VAULT_UNSEAL',
           actor,
           ip,
           status: 'FAILED',
-          details: `Unseal failed with invalid share combination: ${err.message}`,
+          details: 'Unseal failed: the submitted shares did not reconstruct the root key',
         });
-        throw new Error(`Failed to reconstruct master key: ${err.message}`);
+        throw badRequest('The submitted shares do not reconstruct the root key');
       }
     }
 
@@ -256,7 +261,7 @@ export class VaultService {
 
   private assertUnsealed(): void {
     if (this.status !== 'UNSEALED' || !this.rootMasterKey) {
-      throw new Error('Vault is sealed. Key operations are unavailable (HTTP 503)');
+      throw vaultSealed();
     }
   }
 
@@ -307,7 +312,7 @@ export class VaultService {
     const activeVersion = activeState.activeKekVersion;
     const activeKek = this.inMemoryKeks.get(activeVersion);
 
-    if (!activeKek) throw new Error(`Active KEK v${activeVersion} not loaded in memory`);
+    if (!activeKek) throw new VaultError(500, `Active KEK v${activeVersion} is not loaded`);
 
     const outdated = rawDb.prepare('SELECT id, path, kek_version, encrypted_dek FROM secrets WHERE kek_version < ?')
       .all(activeVersion) as { id: string; path: string; kek_version: number; encrypted_dek: string }[];
@@ -318,7 +323,7 @@ export class VaultService {
       const updateStmt = rawDb.prepare('UPDATE secrets SET kek_version = ?, encrypted_dek = ?, updated_at = ? WHERE id = ?');
       for (const item of outdated) {
         const oldKek = this.inMemoryKeks.get(item.kek_version);
-        if (!oldKek) throw new Error(`Historical KEK v${item.kek_version} not found`);
+        if (!oldKek) throw new VaultError(500, `KEK v${item.kek_version} is not loaded`);
 
         const newEncryptedDek = EnvelopeEncryption.rewrapDek(item.encrypted_dek, oldKek, activeKek);
         updateStmt.run(activeVersion, newEncryptedDek, new Date().toISOString(), item.id);
@@ -371,7 +376,7 @@ export class VaultService {
     const activeVersion = activeState.activeKekVersion;
     const activeKek = this.inMemoryKeks.get(activeVersion);
 
-    if (!activeKek) throw new Error(`Active KEK v${activeVersion} missing`);
+    if (!activeKek) throw new VaultError(500, `Active KEK v${activeVersion} is not loaded`);
 
     const normalizedPath = dto.path.trim().replace(/^\/+|\/+$/g, '');
     const pkg: EnvelopeEncryptedPackage = EnvelopeEncryption.encrypt(dto.plaintext, activeKek, activeVersion);
@@ -416,10 +421,10 @@ export class VaultService {
       }
 
       rawDb.exec('COMMIT;');
-    } catch (err: any) {
+    } catch (err) {
       rawDb.exec('ROLLBACK;');
-      if (err.message && err.message.includes('UNIQUE constraint failed')) {
-        throw new Error(`Secret at path "${normalizedPath}" already exists`);
+      if (err instanceof Error && err.message.includes('UNIQUE constraint failed')) {
+        throw conflict(`Secret at path "${normalizedPath}" already exists`);
       }
       throw err;
     }
@@ -470,12 +475,12 @@ export class VaultService {
         status: 'DENIED',
         details: `Secret not found at path: ${cleanQuery}`,
       });
-      throw new Error(`Secret not found at path "${cleanQuery}"`);
+      throw notFound(`Secret not found at path "${cleanQuery}"`);
     }
 
     const kek = this.inMemoryKeks.get(row.kek_version);
     if (!kek) {
-      throw new Error(`KEK v${row.kek_version} is not available in memory`);
+      throw new VaultError(500, `KEK v${row.kek_version} is not loaded`);
     }
 
     const pkg: EnvelopeEncryptedPackage = {
@@ -563,13 +568,13 @@ export class VaultService {
     }));
   }
 
-  deleteSecret(pathOrId: string, actor = 'developer', ip = '127.0.0.1'): boolean {
+  deleteSecret(pathOrId: string, actor = 'developer', ip = '127.0.0.1'): { path: string } {
     this.assertUnsealed();
     const rawDb = this.db.getDb();
     const cleanQuery = pathOrId.trim().replace(/^\/+|\/+$/g, '');
 
     const row = rawDb.prepare('SELECT id, path FROM secrets WHERE path = ? OR id = ?').get(cleanQuery, cleanQuery) as any;
-    if (!row) return false;
+    if (!row) throw notFound(`Secret not found at path "${cleanQuery}"`);
 
     rawDb.exec('BEGIN IMMEDIATE;');
     try {
@@ -590,7 +595,7 @@ export class VaultService {
       details: `Secret at path "${row.path}" was permanently deleted`,
     });
 
-    return true;
+    return { path: row.path };
   }
 
   renewLease(leaseId: string, incrementSeconds = 30, actor = 'client-app', ip = '127.0.0.1'): SecretLease {
@@ -598,10 +603,10 @@ export class VaultService {
     const rawDb = this.db.getDb();
     const lease = rawDb.prepare('SELECT * FROM leases WHERE id = ?').get(leaseId) as any;
 
-    if (!lease) throw new Error(`Lease "${leaseId}" not found`);
-    if (lease.status !== 'ACTIVE') throw new Error(`Cannot renew lease with status "${lease.status}"`);
+    if (!lease) throw notFound(`Lease "${leaseId}" not found`);
+    if (lease.status !== 'ACTIVE') throw conflict(`Cannot renew lease with status "${lease.status}"`);
     if (lease.renew_count >= lease.max_renewals) {
-      throw new Error(`Maximum renewal count (${lease.max_renewals}) reached for lease "${leaseId}"`);
+      throw conflict(`Maximum renewal count (${lease.max_renewals}) reached for lease "${leaseId}"`);
     }
 
     const currentExpiry = new Date(lease.expires_at).getTime();
@@ -641,7 +646,7 @@ export class VaultService {
     const rawDb = this.db.getDb();
     const lease = rawDb.prepare('SELECT * FROM leases WHERE id = ?').get(leaseId) as any;
 
-    if (!lease) throw new Error(`Lease "${leaseId}" not found`);
+    if (!lease) throw notFound(`Lease "${leaseId}" not found`);
     const now = new Date().toISOString();
 
     rawDb.prepare(`

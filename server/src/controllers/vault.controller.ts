@@ -1,41 +1,31 @@
 import { Request, Response } from 'express';
 import { VaultService } from '../services/vault.service.js';
+import { badRequest } from '../../../shared/errors.js';
 
+// Handlers are synchronous, so Express passes any thrown error to the JSON
+// error handler registered in app.ts.
 export class VaultController {
   constructor(private vaultService: VaultService) {}
 
   getStatus = (_req: Request, res: Response): void => {
-    const state = this.vaultService.getState();
-    res.json(state);
+    res.json(this.vaultService.getState());
   };
 
   getDemoShares = (_req: Request, res: Response): void => {
-    const shares = this.vaultService.getDemoShares();
-    res.json({ shares });
+    res.json({ shares: this.vaultService.getDemoShares() });
   };
 
   seal = (req: Request, res: Response): void => {
-    const actor = (req.headers['x-actor'] as string) || 'security-operator';
-    const ip = req.ip || '127.0.0.1';
-    const state = this.vaultService.seal(actor, ip);
-    res.json({ message: 'Vault successfully sealed', state });
+    const state = this.vaultService.seal(this.actor(req, 'security-operator'), this.ip(req));
+    res.json({ message: 'Vault sealed', state });
   };
 
   unseal = (req: Request, res: Response): void => {
-    const { share } = req.body;
+    const { share } = req.body ?? {};
     if (!share || typeof share !== 'string') {
-      res.status(400).json({ error: 'Share string is required' });
-      return;
+      throw badRequest('share is required and must be a string');
     }
-
-    try {
-      const actor = (req.headers['x-actor'] as string) || 'custodian';
-      const ip = req.ip || '127.0.0.1';
-      const progress = this.vaultService.submitUnsealShare(share, actor, ip);
-      res.json(progress);
-    } catch (err: any) {
-      res.status(400).json({ error: err.message });
-    }
+    res.json(this.vaultService.submitUnsealShare(share, this.actor(req, 'custodian'), this.ip(req)));
   };
 
   resetUnseal = (_req: Request, res: Response): void => {
@@ -44,48 +34,29 @@ export class VaultController {
   };
 
   listKeks = (_req: Request, res: Response): void => {
-    const versions = this.vaultService.listKekVersions();
-    res.json(versions);
+    res.json(this.vaultService.listKekVersions());
   };
 
   rotateKek = (req: Request, res: Response): void => {
-    try {
-      const actor = (req.headers['x-actor'] as string) || 'security-admin';
-      const ip = req.ip || '127.0.0.1';
-      const result = this.vaultService.rotateKek(actor, ip);
-      res.json(result);
-    } catch (err: any) {
-      res.status(err.message.includes('sealed') ? 503 : 500).json({ error: err.message });
-    }
+    res.json(this.vaultService.rotateKek(this.actor(req, 'security-admin'), this.ip(req)));
   };
 
   rewrapSecrets = (req: Request, res: Response): void => {
-    try {
-      const actor = (req.headers['x-actor'] as string) || 'security-admin';
-      const ip = req.ip || '127.0.0.1';
-      const result = this.vaultService.rewrapSecrets(actor, ip);
-      res.json(result);
-    } catch (err: any) {
-      res.status(err.message.includes('sealed') ? 503 : 500).json({ error: err.message });
-    }
+    res.json(this.vaultService.rewrapSecrets(this.actor(req, 'security-admin'), this.ip(req)));
   };
 
   listSecrets = (_req: Request, res: Response): void => {
-    const secrets = this.vaultService.listSecrets();
-    res.json(secrets);
+    res.json(this.vaultService.listSecrets());
   };
 
   createSecret = (req: Request, res: Response): void => {
-    const { path, name, description, plaintext, isDynamic, ttlSeconds, maxTtlSeconds } = req.body;
+    const { path, name, description, plaintext, isDynamic, ttlSeconds, maxTtlSeconds } = req.body ?? {};
     if (!path || !name || plaintext === undefined) {
-      res.status(400).json({ error: 'path, name, and plaintext are required fields' });
-      return;
+      throw badRequest('path, name, and plaintext are required fields');
     }
 
-    try {
-      const actor = (req.headers['x-actor'] as string) || 'developer';
-      const ip = req.ip || '127.0.0.1';
-      const secret = this.vaultService.createSecret({
+    const secret = this.vaultService.createSecret(
+      {
         path,
         name,
         description,
@@ -93,96 +64,57 @@ export class VaultController {
         isDynamic,
         ttlSeconds,
         maxTtlSeconds,
-      }, actor, ip);
-      res.status(201).json(secret);
-    } catch (err: any) {
-      const status = err.message.includes('sealed') ? 503 : err.message.includes('already exists') ? 409 : 500;
-      res.status(status).json({ error: err.message });
-    }
+      },
+      this.actor(req, 'developer'),
+      this.ip(req)
+    );
+    res.status(201).json(secret);
   };
 
   readSecret = (req: Request, res: Response): void => {
     const rawPath = this.getWildcardPath(req);
-    if (!rawPath) {
-      res.status(400).json({ error: 'Path parameter is required' });
-      return;
-    }
-
-    try {
-      const actor = (req.headers['x-actor'] as string) || 'developer';
-      const ip = req.ip || '127.0.0.1';
-      const secret = this.vaultService.readSecret(rawPath, actor, ip);
-      res.json(secret);
-    } catch (err: any) {
-      const status = err.message.includes('sealed') ? 503 : err.message.includes('not found') ? 404 : 500;
-      res.status(status).json({ error: err.message });
-    }
+    if (!rawPath) throw badRequest('Path parameter is required');
+    res.json(this.vaultService.readSecret(rawPath, this.actor(req, 'developer'), this.ip(req)));
   };
 
   deleteSecret = (req: Request, res: Response): void => {
     const rawPath = this.getWildcardPath(req);
-    if (!rawPath) {
-      res.status(400).json({ error: 'Path parameter is required' });
-      return;
-    }
-
-    try {
-      const actor = (req.headers['x-actor'] as string) || 'developer';
-      const ip = req.ip || '127.0.0.1';
-      const deleted = this.vaultService.deleteSecret(rawPath, actor, ip);
-      if (!deleted) {
-        res.status(404).json({ error: `Secret at "${rawPath}" not found` });
-        return;
-      }
-      res.json({ message: 'Secret deleted successfully', path: rawPath });
-    } catch (err: any) {
-      const status = err.message.includes('sealed') ? 503 : 500;
-      res.status(status).json({ error: err.message });
-    }
+    if (!rawPath) throw badRequest('Path parameter is required');
+    const deleted = this.vaultService.deleteSecret(rawPath, this.actor(req, 'developer'), this.ip(req));
+    res.json({ message: 'Secret deleted', path: deleted.path });
   };
 
   listLeases = (_req: Request, res: Response): void => {
-    const leases = this.vaultService.listLeases();
-    res.json(leases);
+    res.json(this.vaultService.listLeases());
   };
 
   renewLease = (req: Request, res: Response): void => {
     const id = this.getParam(req.params.id);
-    const { incrementSeconds } = req.body;
-    try {
-      const actor = (req.headers['x-actor'] as string) || 'client-app';
-      const ip = req.ip || '127.0.0.1';
-      const lease = this.vaultService.renewLease(id, incrementSeconds, actor, ip);
-      res.json(lease);
-    } catch (err: any) {
-      const status = err.message.includes('sealed') ? 503 : 400;
-      res.status(status).json({ error: err.message });
-    }
+    const { incrementSeconds } = req.body ?? {};
+    res.json(this.vaultService.renewLease(id, incrementSeconds, this.actor(req, 'client-app'), this.ip(req)));
   };
 
   revokeLease = (req: Request, res: Response): void => {
     const id = this.getParam(req.params.id);
-    try {
-      const actor = (req.headers['x-actor'] as string) || 'client-app';
-      const ip = req.ip || '127.0.0.1';
-      const lease = this.vaultService.revokeLease(id, actor, ip);
-      res.json(lease);
-    } catch (err: any) {
-      const status = err.message.includes('sealed') ? 503 : 400;
-      res.status(status).json({ error: err.message });
-    }
+    res.json(this.vaultService.revokeLease(id, this.actor(req, 'client-app'), this.ip(req)));
   };
 
   getAuditLog = (req: Request, res: Response): void => {
     const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 50;
-    const entries = this.vaultService.getAuditLog(limit);
-    res.json(entries);
+    res.json(this.vaultService.getAuditLog(limit));
   };
 
   verifyAudit = (_req: Request, res: Response): void => {
-    const result = this.vaultService.verifyAuditLedger();
-    res.json(result);
+    res.json(this.vaultService.verifyAuditLedger());
   };
+
+  private actor(req: Request, fallback: string): string {
+    return (req.headers['x-actor'] as string) || fallback;
+  }
+
+  private ip(req: Request): string {
+    return req.ip || '127.0.0.1';
+  }
 
   private getWildcardPath(req: Request): string {
     const param = req.params[0] || (req.params as { path?: string | string[] }).path;
