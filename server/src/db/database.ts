@@ -1,12 +1,13 @@
 import { DatabaseSync } from 'node:sqlite';
 import path from 'node:path';
 import fs from 'node:fs';
+import { defaultDbPath } from '../config.js';
 
 export class VaultDatabase {
   private db: DatabaseSync;
 
   constructor(dbPath?: string) {
-    const resolvedPath = dbPath || path.resolve(process.cwd(), 'data', 'vaultmesh.db');
+    const resolvedPath = dbPath || defaultDbPath;
     const dir = path.dirname(resolvedPath);
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });

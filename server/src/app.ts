@@ -1,16 +1,14 @@
 import express from 'express';
 import cors from 'cors';
+import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { VaultDatabase } from './db/database.js';
 import { VaultService } from './services/vault.service.js';
 import { VaultController } from './controllers/vault.controller.js';
 import { createVaultRouter } from './routes/api.routes.js';
+import { defaultClientDir } from './config.js';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-export function createApp(dbPath?: string) {
+export function createApp(dbPath?: string, clientDir: string = defaultClientDir) {
   const app = express();
   const db = new VaultDatabase(dbPath);
   const service = new VaultService(db);
@@ -25,8 +23,10 @@ export function createApp(dbPath?: string) {
 
   app.use('/api', createVaultRouter(controller));
 
-  const clientDist = path.resolve(__dirname, '../../client/dist');
-  app.use(express.static(clientDist));
+  // Serve the built dashboard when it exists (production and Docker).
+  if (fs.existsSync(path.join(clientDir, 'index.html'))) {
+    app.use(express.static(clientDir));
+  }
 
   return { app, db, service, controller };
 }
