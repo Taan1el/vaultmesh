@@ -92,7 +92,9 @@ export class VaultService {
         this.masterShares = JSON.parse(sharesRow.value);
       }
 
-      if (this.masterShares.length >= UNSEAL_THRESHOLD) {
+      // A vault that was sealed before shutdown stays sealed after a restart.
+      const statusRow = rawDb.prepare('SELECT value FROM vault_metadata WHERE key = ?').get('status') as { value: string } | undefined;
+      if (statusRow?.value !== 'SEALED' && this.masterShares.length >= UNSEAL_THRESHOLD) {
         this.rootMasterKey = ShamirSecretSharing.combine(this.masterShares.slice(0, UNSEAL_THRESHOLD));
         this.inMemoryKeks = this.unwrapKeks(this.rootMasterKey);
         this.status = 'UNSEALED';
@@ -162,6 +164,13 @@ export class VaultService {
     return keks;
   }
 
+  private setMetadata(key: string, value: string): void {
+    this.db
+      .getDb()
+      .prepare('INSERT INTO vault_metadata (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value')
+      .run(key, value);
+  }
+
   getState(): VaultState {
     const rawDb = this.db.getDb();
     const activeKekRow = rawDb.prepare('SELECT value FROM vault_metadata WHERE key = ?').get('active_kek_version') as { value: string } | undefined;
@@ -186,6 +195,9 @@ export class VaultService {
   }
 
   seal(actor = 'operator', ip = '127.0.0.1'): VaultState {
+    if (this.status === 'SEALED') {
+      return this.getState();
+    }
     if (this.rootMasterKey) {
       this.rootMasterKey.fill(0);
       this.rootMasterKey = null;
@@ -196,6 +208,7 @@ export class VaultService {
     this.inMemoryKeks.clear();
     this.submittedShares.clear();
     this.status = 'SEALED';
+    this.setMetadata('status', 'SEALED');
 
     this.recordAudit({
       action: 'VAULT_SEAL',
@@ -239,6 +252,7 @@ export class VaultService {
       this.inMemoryKeks = this.unwrapKeks(candidate);
       this.rootMasterKey = candidate;
       this.status = 'UNSEALED';
+      this.setMetadata('status', 'UNSEALED');
     } catch {
       candidate?.fill(0);
       this.recordAudit({
