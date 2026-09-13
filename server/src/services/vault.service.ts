@@ -17,13 +17,19 @@ import {
 } from '../../../shared/types.js';
 import { badRequest, conflict, notFound, vaultSealed, VaultError } from '../../../shared/errors.js';
 import { parseCreateSecretInput, parseRenewIncrement, parseSecretPath } from '../../../shared/validation.js';
+import { formatShare, type SharePoint } from '../../../shared/shamir.js';
+
+const UNSEAL_THRESHOLD = 3;
+const TOTAL_SHARES = 5;
+const ROOT_KEY_BYTES = 32;
 
 export class VaultService {
   private db: VaultDatabase;
   private status: VaultStatus = 'SEALED';
   private rootMasterKey: Buffer | null = null;
   private inMemoryKeks: Map<number, Buffer> = new Map();
-  private submittedShares: Set<string> = new Set();
+  // Submitted custodian shares for the current unseal attempt, keyed by share index.
+  private submittedShares: Map<number, string> = new Map();
   private masterShares: string[] = [];
   private reaperTimer: NodeJS.Timeout | null = null;
 
@@ -39,9 +45,9 @@ export class VaultService {
 
     if (!initRow) {
       // Initialize fresh vault
-      const rootKey = crypto.randomBytes(32);
+      const rootKey = crypto.randomBytes(ROOT_KEY_BYTES);
       this.rootMasterKey = rootKey;
-      this.masterShares = ShamirSecretSharing.split(rootKey, 5, 3);
+      this.masterShares = ShamirSecretSharing.split(rootKey, TOTAL_SHARES, UNSEAL_THRESHOLD);
 
       const kekV1 = EnvelopeEncryption.generateKek();
       this.inMemoryKeks.set(1, kekV1);
@@ -86,9 +92,9 @@ export class VaultService {
         this.masterShares = JSON.parse(sharesRow.value);
       }
 
-      if (this.masterShares.length >= 3) {
-        this.rootMasterKey = ShamirSecretSharing.combine(this.masterShares.slice(0, 3));
-        this.loadKeksFromStore();
+      if (this.masterShares.length >= UNSEAL_THRESHOLD) {
+        this.rootMasterKey = ShamirSecretSharing.combine(this.masterShares.slice(0, UNSEAL_THRESHOLD));
+        this.inMemoryKeks = this.unwrapKeks(this.rootMasterKey);
         this.status = 'UNSEALED';
       }
     }
@@ -137,15 +143,23 @@ export class VaultService {
     }, 'system/seeder', '127.0.0.1');
   }
 
-  private loadKeksFromStore(): void {
-    if (!this.rootMasterKey) return;
+  /**
+   * Decrypts every stored KEK with a candidate root key. AES-GCM authentication
+   * fails for a wrong key, so this also proves that reconstructed shares are valid.
+   */
+  private unwrapKeks(rootKey: Buffer): Map<number, Buffer> {
     const rawDb = this.db.getDb();
     const rows = rawDb.prepare('SELECT version, encrypted_kek FROM kek_store').all() as { version: number; encrypted_kek: string }[];
-    this.inMemoryKeks.clear();
-    for (const r of rows) {
-      const kek = EnvelopeEncryption.unwrapKey(r.encrypted_kek, this.rootMasterKey);
-      this.inMemoryKeks.set(r.version, kek);
+    const keks = new Map<number, Buffer>();
+    try {
+      for (const r of rows) {
+        keks.set(r.version, EnvelopeEncryption.unwrapKey(r.encrypted_kek, rootKey));
+      }
+    } catch (err) {
+      for (const kek of keks.values()) kek.fill(0);
+      throw err;
     }
+    return keks;
   }
 
   getState(): VaultState {
@@ -156,9 +170,10 @@ export class VaultService {
 
     return {
       status: this.status,
-      threshold: 3,
-      totalShares: 5,
+      threshold: UNSEAL_THRESHOLD,
+      totalShares: TOTAL_SHARES,
       sharesSubmitted: this.submittedShares.size,
+      submittedShareIndexes: this.submittedShareIndexes(),
       activeKekVersion: activeKekRow ? parseInt(activeKekRow.value, 10) : 1,
       totalSecrets: countRow.count,
       activeLeases: leaseRow.count,
@@ -194,66 +209,74 @@ export class VaultService {
   }
 
   submitUnsealShare(shareStr: string, actor = 'custodian', ip = '127.0.0.1'): UnsealProgress {
-    if (this.status === 'UNSEALED') {
-      return {
-        status: 'UNSEALED',
-        sharesSubmitted: 3,
-        threshold: 3,
-        sharesRemaining: 0,
-        unsealed: true,
-      };
-    }
-
+    let point: SharePoint;
     try {
-      ShamirSecretSharing.parseShare(shareStr);
+      point = ShamirSecretSharing.parseShare(shareStr, ROOT_KEY_BYTES);
     } catch (err) {
       throw badRequest(err instanceof Error ? err.message : 'Invalid share');
     }
-    this.submittedShares.add(shareStr.trim());
 
-    if (this.submittedShares.size >= 3) {
-      try {
-        const sharesArr = Array.from(this.submittedShares);
-        const reconstructedRoot = ShamirSecretSharing.combine(sharesArr);
-        this.rootMasterKey = reconstructedRoot;
-        this.loadKeksFromStore();
-        this.status = 'UNSEALED';
-        this.submittedShares.clear();
-
-        this.recordAudit({
-          action: 'VAULT_UNSEAL',
-          actor,
-          ip,
-          status: 'SUCCESS',
-          details: 'Vault successfully unsealed using 3 threshold custodian shares.',
-        });
-
-        return {
-          status: 'UNSEALED',
-          sharesSubmitted: 3,
-          threshold: 3,
-          sharesRemaining: 0,
-          unsealed: true,
-        };
-      } catch {
-        this.recordAudit({
-          action: 'VAULT_UNSEAL',
-          actor,
-          ip,
-          status: 'FAILED',
-          details: 'Unseal failed: the submitted shares did not reconstruct the root key',
-        });
-        throw badRequest('The submitted shares do not reconstruct the root key');
-      }
+    if (this.status === 'UNSEALED') {
+      return this.unsealProgress();
     }
 
+    if (this.submittedShares.has(point.x)) {
+      throw conflict(`Share ${point.x} was already submitted. Use a different custodian share.`);
+    }
+    this.submittedShares.set(point.x, formatShare(point));
+
+    if (this.submittedShares.size < UNSEAL_THRESHOLD) {
+      return this.unsealProgress();
+    }
+
+    // Every attempt that reaches the threshold ends here, so a bad share never
+    // leaves the vault stuck with an unusable set of submitted shares.
+    const shares = Array.from(this.submittedShares.values());
+    this.submittedShares.clear();
+    let candidate: Buffer | null = null;
+    try {
+      candidate = ShamirSecretSharing.combine(shares);
+      this.inMemoryKeks = this.unwrapKeks(candidate);
+      this.rootMasterKey = candidate;
+      this.status = 'UNSEALED';
+    } catch {
+      candidate?.fill(0);
+      this.recordAudit({
+        action: 'VAULT_UNSEAL',
+        actor,
+        ip,
+        status: 'FAILED',
+        details: 'Unseal failed: the submitted shares did not reconstruct the root key',
+      });
+      throw badRequest('The submitted shares do not reconstruct the root key. Progress was reset, so submit three valid shares again.');
+    }
+
+    this.recordAudit({
+      action: 'VAULT_UNSEAL',
+      actor,
+      ip,
+      status: 'SUCCESS',
+      details: `Vault unsealed with ${UNSEAL_THRESHOLD} custodian shares`,
+    });
+
+    return this.unsealProgress();
+  }
+
+  private unsealProgress(): UnsealProgress {
+    const unsealed = this.status === 'UNSEALED';
+    const sharesSubmitted = unsealed ? UNSEAL_THRESHOLD : this.submittedShares.size;
     return {
-      status: 'SEALED',
-      sharesSubmitted: this.submittedShares.size,
-      threshold: 3,
-      sharesRemaining: 3 - this.submittedShares.size,
-      unsealed: false,
+      status: this.status,
+      sharesSubmitted,
+      submittedShareIndexes: this.submittedShareIndexes(),
+      threshold: UNSEAL_THRESHOLD,
+      sharesRemaining: UNSEAL_THRESHOLD - sharesSubmitted,
+      unsealed,
     };
+  }
+
+  private submittedShareIndexes(): number[] {
+    return Array.from(this.submittedShares.keys()).sort((a, b) => a - b);
   }
 
   resetUnseal(): void {

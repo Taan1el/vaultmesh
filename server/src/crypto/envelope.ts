@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import { formatWrappedKey, parseWrappedKey } from '../../../shared/encoding.js';
 
 export interface EnvelopeEncryptedPackage {
   kekVersion: number;
@@ -29,22 +30,21 @@ export class EnvelopeEncryption {
     const encrypted = Buffer.concat([cipher.update(dek), cipher.final()]);
     const tag = cipher.getAuthTag();
 
-    return `${iv.toString('hex')}:${tag.toString('hex')}:${encrypted.toString('hex')}`;
+    return formatWrappedKey({
+      iv: iv.toString('hex'),
+      authTag: tag.toString('hex'),
+      ciphertext: encrypted.toString('hex'),
+    });
   }
 
   /**
    * Unwrap (decrypt) an encrypted Data Encryption Key (DEK) with the corresponding KEK
    */
   static unwrapKey(wrappedDekStr: string, kek: Buffer): Buffer {
-    const parts = wrappedDekStr.split(':');
-    if (parts.length !== 3) {
-      throw new Error('Malformed wrapped key format. Expected iv:tag:ciphertext');
-    }
-
-    const [ivHex, tagHex, cipherHex] = parts;
-    const iv = Buffer.from(ivHex, 'hex');
-    const tag = Buffer.from(tagHex, 'hex');
-    const ciphertext = Buffer.from(cipherHex, 'hex');
+    const parts = parseWrappedKey(wrappedDekStr);
+    const iv = Buffer.from(parts.iv, 'hex');
+    const tag = Buffer.from(parts.authTag, 'hex');
+    const ciphertext = Buffer.from(parts.ciphertext, 'hex');
 
     const decipher = crypto.createDecipheriv(this.ALGORITHM, kek, iv) as crypto.DecipherGCM;
     decipher.setAuthTag(tag);

@@ -21,6 +21,8 @@ export interface VaultState {
   threshold: number;
   totalShares: number;
   sharesSubmitted: number;
+  /** Indexes of the custodian shares submitted in the current unseal attempt. */
+  submittedShareIndexes: number[];
   activeKekVersion: number;
   totalSecrets: number;
   activeLeases: number;
@@ -31,6 +33,7 @@ export interface VaultState {
 export interface UnsealProgress {
   status: VaultStatus;
   sharesSubmitted: number;
+  submittedShareIndexes: number[];
   threshold: number;
   sharesRemaining: number;
   unsealed: boolean;
