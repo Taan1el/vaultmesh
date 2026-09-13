@@ -20,6 +20,7 @@ import { parseCreateSecretInput, parseRenewIncrement, parseSecretPath } from '..
 import { formatShare, type SharePoint } from '../../../shared/shamir.js';
 import { assertLeaseRevocable, LEASE_MAX_RENEWALS, planLeaseRenewal } from '../../../shared/leases.js';
 import { auditChainInputs, checkAuditChain, GENESIS_HASH } from '../../../shared/audit.js';
+import { SAMPLE_SECRETS } from '../../../shared/seed.js';
 
 const UNSEAL_THRESHOLD = 3;
 const TOTAL_SHARES = 5;
@@ -86,7 +87,7 @@ export class VaultService {
         details: 'Vault initialized with 3-of-5 Shamir threshold and KEK v1',
       });
 
-      // Seed default production-grade secrets
+      // Write placeholder secrets so a new vault is not empty.
       this.seedInitialSecrets();
     } else {
       const sharesRow = rawDb.prepare('SELECT value FROM vault_metadata WHERE key = ?').get('demo_shares') as { value: string } | undefined;
@@ -105,46 +106,9 @@ export class VaultService {
   }
 
   private seedInitialSecrets(): void {
-    this.createSecret({
-      path: 'secret/production/database',
-      name: 'Production PostgreSQL Primary',
-      description: 'Primary connection credentials with auto-replicated replica read strings',
-      plaintext: JSON.stringify({
-        host: 'db-cluster-primary.internal.cloud',
-        port: 5432,
-        database: 'orders_production',
-        username: 'pg_app_svc',
-        password: 'P@ssw0rd_SuperSecure_9921',
-        pool_size: 25,
-      }),
-      isDynamic: false,
-    }, 'system/seeder', '127.0.0.1');
-
-    this.createSecret({
-      path: 'secret/payments/stripe',
-      name: 'Stripe API Gateway Keys',
-      description: 'Production webhook signing secret and private restricted key',
-      plaintext: JSON.stringify({
-        publishable_key: 'pk_live_51M0abcdef1234567890',
-        secret_key: 'rk_live_99abc99xyz001122334455',
-        webhook_secret: 'whsec_99a8b7c6d5e4f3a2b1c0d9e8f7a6b5c4',
-      }),
-      isDynamic: false,
-    }, 'system/seeder', '127.0.0.1');
-
-    this.createSecret({
-      path: 'secret/cloud/aws_sts_token',
-      name: 'Ephemeral AWS STS Credential',
-      description: 'Dynamic temporary STS token with automatic 30s TTL lease revocation',
-      plaintext: JSON.stringify({
-        access_key_id: 'ASIAZ9876543210ABCDEF',
-        secret_access_key: 'k8J9xL2pQ5mN8vT1wR4yU7iO0sA3dF6gH9jK2lZ',
-        session_token: 'FQoGZXIvYXdzEJr//////////wEaDEB...EXAMPLE_TOKEN',
-      }),
-      isDynamic: true,
-      ttlSeconds: 30,
-      maxTtlSeconds: 120,
-    }, 'system/seeder', '127.0.0.1');
+    for (const sample of SAMPLE_SECRETS) {
+      this.createSecret(sample, 'system/seeder', '127.0.0.1');
+    }
   }
 
   /**
@@ -217,7 +181,7 @@ export class VaultService {
       actor,
       ip,
       status: 'SUCCESS',
-      details: 'Vault was manually sealed. All master keys purged from RAM.',
+      details: 'Vault sealed. The root key and KEKs were cleared from memory.',
     });
 
     return this.getState();
@@ -375,7 +339,7 @@ export class VaultService {
           actor,
           ip,
           status: 'SUCCESS',
-          details: `Re-wrapped DEK from KEK v${item.kek_version} to KEK v${activeVersion} with zero plaintext exposure`,
+          details: `Re-wrapped DEK from KEK v${item.kek_version} to KEK v${activeVersion} without decrypting the secret`,
         });
       }
       rawDb.exec('COMMIT;');
@@ -764,7 +728,7 @@ export class VaultService {
           actor: 'system/lease-reaper',
           ip: '127.0.0.1',
           status: 'SUCCESS',
-          details: `Lease "${row.id}" TTL expired and was auto-revoked`,
+          details: `Lease "${row.id}" expired`,
         });
       }
       rawDb.exec('COMMIT;');

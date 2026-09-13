@@ -148,7 +148,7 @@ describe('VaultMesh Core Test Suite', () => {
       // Now reading secrets works normally
       const readRes = await request.get('/api/secrets/secret/production/database');
       expect(readRes.status).toBe(200);
-      expect(readRes.body.plaintext).toContain('orders_production');
+      expect(readRes.body.plaintext).toContain('orders-db.example.internal');
     });
   });
 
@@ -158,7 +158,7 @@ describe('VaultMesh Core Test Suite', () => {
         path: 'secret/custom/api_token',
         name: 'Custom API Token',
         description: 'Test integration secret',
-        plaintext: 'tok_live_1234567890',
+        plaintext: 'example-token-not-real',
       });
       expect(createRes.status).toBe(201);
       expect(createRes.body.path).toBe('secret/custom/api_token');
@@ -166,7 +166,7 @@ describe('VaultMesh Core Test Suite', () => {
 
       const readRes = await request.get('/api/secrets/secret/custom/api_token');
       expect(readRes.status).toBe(200);
-      expect(readRes.body.plaintext).toBe('tok_live_1234567890');
+      expect(readRes.body.plaintext).toBe('example-token-not-real');
 
       const delRes = await request.delete('/api/secrets/secret/custom/api_token');
       expect(delRes.status).toBe(200);
@@ -189,7 +189,7 @@ describe('VaultMesh Core Test Suite', () => {
       const readRes = await request.get('/api/secrets/secret/production/database');
       expect(readRes.status).toBe(200);
       expect(readRes.body.kekVersion).toBe(2);
-      expect(readRes.body.plaintext).toContain('orders_production');
+      expect(readRes.body.plaintext).toContain('orders-db.example.internal');
     });
   });
 
