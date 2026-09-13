@@ -5,12 +5,7 @@ import { createTestApp } from './helpers.js';
 
 // Prefixes used by real credential formats that secret scanners look for.
 const REAL_KEY_PATTERNS = [/sk_live/i, /pk_live/i, /rk_live/i, /whsec_/i, /\bAKIA/, /\bASIA/, /ghp_/, /xox[bp]-/];
-
-function stringValues(value: unknown): string[] {
-  if (typeof value === 'string') return [value];
-  if (value && typeof value === 'object') return Object.values(value).flatMap(stringValues);
-  return [];
-}
+const CREDENTIAL_FIELD = /password|key|secret|token/i;
 
 describe('sample secrets', () => {
   let t: ReturnType<typeof createTestApp> | undefined;
@@ -28,13 +23,14 @@ describe('sample secrets', () => {
 
   it('only contain placeholder credential values', () => {
     for (const sample of SAMPLE_SECRETS) {
-      const values = stringValues(JSON.parse(sample.plaintext));
+      const fields = Object.entries(JSON.parse(sample.plaintext) as Record<string, unknown>);
       for (const pattern of REAL_KEY_PATTERNS) {
-        expect(values.join(' ')).not.toMatch(pattern);
+        expect(sample.plaintext).not.toMatch(pattern);
       }
-      const credentialValues = values.filter((v) => /password|key|secret|token/i.test(Object.keys(JSON.parse(sample.plaintext)).find((k) => JSON.parse(sample.plaintext)[k] === v) ?? ''));
-      for (const value of credentialValues) {
-        expect(value).toMatch(/example/i);
+      for (const [field, value] of fields) {
+        if (CREDENTIAL_FIELD.test(field)) {
+          expect(String(value)).toMatch(/example/i);
+        }
       }
     }
   });
