@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type {
   AuditEntry,
   AuditVerificationResult,
+  CreateSecretDto,
   DecryptedSecret,
   KekVersionInfo,
   SecretLease,
@@ -9,8 +10,15 @@ import type {
   VaultState,
 } from '../../shared/types';
 import { api } from './services/api';
+import { AuditLedger } from './components/AuditLedger';
+import { CreateSecretForm } from './components/CreateSecretForm';
+import { LeaseList } from './components/LeaseList';
+import { SecretDrawer } from './components/SecretDrawer';
+import { UnsealPanel } from './components/UnsealPanel';
+import { errorMessage, formatDateTime, maskHex } from './components/format';
 
-type LoadState = 'idle' | 'loading' | 'ready' | 'error';
+const REFRESH_INTERVAL_MS = 5000;
+const AUDIT_ENTRIES_SHOWN = 8;
 
 interface Snapshot {
   state: VaultState | null;
@@ -22,6 +30,8 @@ interface Snapshot {
   shares: string[];
 }
 
+type Notice = { kind: 'success' | 'error'; text: string } | null;
+
 const emptySnapshot: Snapshot = {
   state: null,
   secrets: [],
@@ -32,112 +42,126 @@ const emptySnapshot: Snapshot = {
   shares: [],
 };
 
-function maskCiphertext(value: string): string {
-  if (value.length <= 18) return value;
-  return `${value.slice(0, 10)}...${value.slice(-8)}`;
-}
-
-function formatDate(value: string): string {
-  return new Intl.DateTimeFormat(undefined, {
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(new Date(value));
-}
-
 export function App() {
   const [snapshot, setSnapshot] = useState<Snapshot>(emptySnapshot);
-  const [loadState, setLoadState] = useState<LoadState>('idle');
-  const [message, setMessage] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState<Notice>(null);
   const [selectedSecret, setSelectedSecret] = useState<DecryptedSecret | null>(null);
-  const [shareInput, setShareInput] = useState('');
-  const [form, setForm] = useState({
-    path: 'secret/apps/reporting',
-    name: 'Reporting API Token',
-    description: 'Token used by the reporting worker',
-    plaintext: '{"token":"rpt_live_example","scope":"reports:read"}',
-    isDynamic: false,
-    ttlSeconds: 60,
-  });
+  const latestRefresh = useRef(0);
+  const lastRefreshFailed = useRef(false);
+  const drawerTrigger = useRef<HTMLElement | null>(null);
 
   const refresh = useCallback(async () => {
-    setLoadState('loading');
+    const refreshId = ++latestRefresh.current;
     try {
       const [state, secrets, leases, keks, audit, auditVerification, shares] = await Promise.all([
         api.status(),
         api.secrets(),
         api.leases(),
         api.keks(),
-        api.audit(),
+        api.audit(AUDIT_ENTRIES_SHOWN),
         api.verifyAudit(),
         api.demoShares(),
       ]);
-
-      setSnapshot({
-        state,
-        secrets,
-        leases,
-        keks,
-        audit,
-        auditVerification,
-        shares: shares.shares,
-      });
-      setLoadState('ready');
+      // Ignore results from a refresh that a newer one has overtaken.
+      if (refreshId !== latestRefresh.current) return;
+      setSnapshot({ state, secrets, leases, keks, audit, auditVerification, shares: shares.shares });
+      if (lastRefreshFailed.current) setNotice(null);
+      lastRefreshFailed.current = false;
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Unable to load vault state');
-      setLoadState('error');
+      if (refreshId !== latestRefresh.current) return;
+      if (!lastRefreshFailed.current) {
+        setNotice({ kind: 'error', text: `Unable to load vault state. ${errorMessage(error, '')}`.trim() });
+      }
+      lastRefreshFailed.current = true;
+    } finally {
+      if (refreshId === latestRefresh.current) setLoading(false);
     }
   }, []);
 
   useEffect(() => {
     void refresh();
+    // Poll so lease expiry and changes made elsewhere show up without a manual refresh.
+    const id = window.setInterval(() => {
+      if (document.visibilityState !== 'hidden') void refresh();
+    }, REFRESH_INTERVAL_MS);
+    return () => window.clearInterval(id);
   }, [refresh]);
 
-  const activeSecrets = useMemo(
-    () => snapshot.secrets.filter((secret) => !secret.isDynamic).length,
-    [snapshot.secrets]
-  );
-
-  async function runAction(action: () => Promise<unknown>, success: string) {
-    setMessage('');
+  async function runAction<T>(action: () => Promise<T>, success: string | ((result: T) => string)): Promise<boolean> {
+    setBusy(true);
+    setNotice(null);
+    let ok = false;
     try {
-      await action();
-      setMessage(success);
-      await refresh();
+      const result = await action();
+      setNotice({ kind: 'success', text: typeof success === 'function' ? success(result) : success });
+      ok = true;
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Action failed');
+      setNotice({ kind: 'error', text: errorMessage(error, 'Action failed') });
     }
+    await refresh();
+    setBusy(false);
+    return ok;
   }
 
-  async function readSecret(path: string) {
-    setMessage('');
+  const closeDrawer = useCallback(() => {
+    setSelectedSecret(null);
+    drawerTrigger.current?.focus();
+    drawerTrigger.current = null;
+  }, []);
+
+  async function inspectSecret(path: string, trigger: HTMLElement) {
+    setNotice(null);
     try {
       const secret = await api.readSecret(path);
+      drawerTrigger.current = trigger;
       setSelectedSecret(secret);
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Unable to read secret');
+      setNotice({ kind: 'error', text: errorMessage(error, 'Unable to read secret') });
     }
+    // Reading a dynamic secret can issue a lease and always adds an audit entry.
+    await refresh();
   }
 
-  async function createSecret(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    await runAction(
-      () =>
-        api.createSecret({
-          path: form.path,
-          name: form.name,
-          description: form.description,
-          plaintext: form.plaintext,
-          isDynamic: form.isDynamic,
-          ttlSeconds: form.isDynamic ? form.ttlSeconds : undefined,
-          maxTtlSeconds: form.isDynamic ? form.ttlSeconds * 5 : undefined,
-        }),
-      'Secret created and encrypted'
+  async function deleteSecret(secret: StoredSecret) {
+    if (!window.confirm(`Delete ${secret.path}? Its leases are removed too. This cannot be undone.`)) return;
+    if (selectedSecret?.id === secret.id) closeDrawer();
+    await runAction(() => api.deleteSecret(secret.path), `Deleted ${secret.path}`);
+  }
+
+  async function seal() {
+    // Sealing clears keys on the server, so stop showing decrypted data as well.
+    setSelectedSecret(null);
+    await runAction(api.seal, 'Vault sealed');
+  }
+
+  function submitShare(share: string): Promise<boolean> {
+    return runAction(
+      () => api.unseal(share),
+      (progress) =>
+        progress.unsealed
+          ? 'Vault unsealed'
+          : `Share accepted. ${progress.sharesRemaining} more ${progress.sharesRemaining === 1 ? 'share' : 'shares'} needed.`
     );
   }
 
-  const status = snapshot.state?.status ?? 'SEALED';
+  function rewrapSecrets(): Promise<boolean> {
+    return runAction(api.rewrapSecrets, ({ rewrappedCount, activeVersion }) =>
+      rewrappedCount === 0
+        ? `Nothing to re-wrap. Every secret already uses KEK v${activeVersion}.`
+        : `Re-wrapped ${rewrappedCount} ${rewrappedCount === 1 ? 'secret' : 'secrets'} to KEK v${activeVersion}`
+    );
+  }
+
+  function createSecret(dto: CreateSecretDto): Promise<boolean> {
+    return runAction(() => api.createSecret(dto), `Encrypted and stored ${dto.path.trim()}`);
+  }
+
+  const { state } = snapshot;
+  const sealed = state?.status === 'SEALED';
+  const staticSecrets = snapshot.secrets.filter((secret) => !secret.isDynamic).length;
+  const outdatedSecrets = state ? snapshot.secrets.filter((secret) => secret.kekVersion < state.activeKekVersion).length : 0;
 
   return (
     <main className="shell">
@@ -146,48 +170,57 @@ export function App() {
           <p className="eyebrow">VaultMesh</p>
           <h1 id="page-title">Secrets operations console</h1>
           <p className="lede">
-            Manage envelope-encrypted secrets, custodian unseal flow, key rotation, dynamic leases, and
-            tamper-evident audit checks from one control surface.
+            Store envelope-encrypted secrets, walk through a custodian unseal, rotate and re-wrap keys, manage dynamic
+            leases and check the tamper-evident audit chain.
           </p>
         </div>
-        <div className={`status-pill ${status.toLowerCase()}`} role="status">
+        <div className={`status-pill ${state ? state.status.toLowerCase() : 'loading'}`} role="status">
           <span aria-hidden="true" />
-          {status}
+          {state ? state.status : 'Loading'}
         </div>
       </section>
 
       <section className="toolbar" aria-label="Vault actions">
-        <button type="button" onClick={() => void refresh()} disabled={loadState === 'loading'}>
+        <button type="button" onClick={() => void refresh()} disabled={busy}>
           Refresh
         </button>
-        <button type="button" onClick={() => void runAction(api.seal, 'Vault sealed')}>
+        <button type="button" onClick={() => void seal()} disabled={busy || !state || sealed}>
           Seal
         </button>
-        <button type="button" onClick={() => void runAction(api.rotateKek, 'New KEK version created')}>
+        <button
+          type="button"
+          onClick={() => void runAction(api.rotateKek, 'New KEK version created')}
+          disabled={busy || !state || sealed}
+        >
           Rotate KEK
         </button>
-        <button type="button" onClick={() => void runAction(api.rewrapSecrets, 'Secrets re-wrapped')}>
-          Re-wrap secrets
+        <button type="button" onClick={() => void rewrapSecrets()} disabled={busy || !state || sealed}>
+          Re-wrap secrets{outdatedSecrets > 0 ? ` (${outdatedSecrets})` : ''}
         </button>
+        {sealed ? <p className="hint toolbar-hint">Sealed: key operations stay disabled until the vault is unsealed.</p> : null}
       </section>
 
-      {message ? <p className="notice">{message}</p> : null}
+      {notice ? (
+        <p className={`notice ${notice.kind}`} role={notice.kind === 'error' ? 'alert' : 'status'}>
+          {notice.text}
+        </p>
+      ) : null}
 
       <section className="metrics" aria-label="Vault metrics">
         <article>
-          <span>{snapshot.state?.totalSecrets ?? 0}</span>
+          <span>{state?.totalSecrets ?? 0}</span>
           <p>Total secrets</p>
         </article>
         <article>
-          <span>{activeSecrets}</span>
+          <span>{staticSecrets}</span>
           <p>Static secrets</p>
         </article>
         <article>
-          <span>{snapshot.state?.activeLeases ?? 0}</span>
+          <span>{state?.activeLeases ?? 0}</span>
           <p>Active leases</p>
         </article>
         <article>
-          <span>v{snapshot.state?.activeKekVersion ?? 0}</span>
+          <span>v{state?.activeKekVersion ?? 0}</span>
           <p>Active KEK</p>
         </article>
       </section>
@@ -196,7 +229,7 @@ export function App() {
         <section className="panel" aria-labelledby="secrets-title">
           <div className="panel-heading">
             <h2 id="secrets-title">Secret inventory</h2>
-            <span>{loadState === 'loading' ? 'Loading' : `${snapshot.secrets.length} paths`}</span>
+            <span>{loading ? 'Loading' : `${snapshot.secrets.length} paths`}</span>
           </div>
           <div className="table-wrap">
             <table>
@@ -205,22 +238,54 @@ export function App() {
                   <th scope="col">Path</th>
                   <th scope="col">KEK</th>
                   <th scope="col">Ciphertext</th>
-                  <th scope="col">Action</th>
+                  <th scope="col">Actions</th>
                 </tr>
               </thead>
               <tbody>
+                {!loading && snapshot.secrets.length === 0 ? (
+                  <tr>
+                    <td colSpan={4} className="muted">
+                      No secrets stored yet.
+                    </td>
+                  </tr>
+                ) : null}
                 {snapshot.secrets.map((secret) => (
                   <tr key={secret.id}>
                     <td>
-                      <strong>{secret.name}</strong>
+                      <strong>
+                        {secret.name}
+                        {secret.isDynamic ? <span className="tag">Dynamic</span> : null}
+                      </strong>
                       <small>{secret.path}</small>
                     </td>
-                    <td>v{secret.kekVersion}</td>
-                    <td className="mono">{maskCiphertext(secret.ciphertext)}</td>
                     <td>
-                      <button type="button" className="small" onClick={() => void readSecret(secret.path)}>
-                        Inspect
-                      </button>
+                      v{secret.kekVersion}
+                      {state && secret.kekVersion < state.activeKekVersion ? <small>needs re-wrap</small> : null}
+                    </td>
+                    <td className="mono" title={`Updated ${formatDateTime(secret.updatedAt)}`}>
+                      {maskHex(secret.ciphertext)}
+                    </td>
+                    <td>
+                      <div className="button-row compact">
+                        <button
+                          type="button"
+                          className="small"
+                          onClick={(event) => void inspectSecret(secret.path, event.currentTarget)}
+                          disabled={sealed}
+                          aria-label={`Inspect ${secret.path}`}
+                        >
+                          Inspect
+                        </button>
+                        <button
+                          type="button"
+                          className="small secondary"
+                          onClick={() => void deleteSecret(secret)}
+                          disabled={busy || sealed}
+                          aria-label={`Delete ${secret.path}`}
+                        >
+                          Delete
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -229,175 +294,47 @@ export function App() {
           </div>
         </section>
 
-        <section className="panel" aria-labelledby="create-title">
-          <div className="panel-heading">
-            <h2 id="create-title">Create encrypted secret</h2>
-          </div>
-          <form onSubmit={(event) => void createSecret(event)}>
-            <label>
-              Path
-              <input
-                value={form.path}
-                onChange={(event) => setForm({ ...form, path: event.target.value })}
-                required
-              />
-            </label>
-            <label>
-              Name
-              <input
-                value={form.name}
-                onChange={(event) => setForm({ ...form, name: event.target.value })}
-                required
-              />
-            </label>
-            <label>
-              Description
-              <input
-                value={form.description}
-                onChange={(event) => setForm({ ...form, description: event.target.value })}
-              />
-            </label>
-            <label>
-              Plaintext
-              <textarea
-                value={form.plaintext}
-                onChange={(event) => setForm({ ...form, plaintext: event.target.value })}
-                rows={5}
-                required
-              />
-            </label>
-            <label className="check">
-              <input
-                type="checkbox"
-                checked={form.isDynamic}
-                onChange={(event) => setForm({ ...form, isDynamic: event.target.checked })}
-              />
-              Issue a dynamic lease
-            </label>
-            {form.isDynamic ? (
-              <label>
-                TTL seconds
-                <input
-                  type="number"
-                  min="10"
-                  max="600"
-                  value={form.ttlSeconds}
-                  onChange={(event) => setForm({ ...form, ttlSeconds: Number(event.target.value) })}
-                />
-              </label>
-            ) : null}
-            <button type="submit">Encrypt secret</button>
-          </form>
-        </section>
+        <CreateSecretForm disabled={busy || !state || sealed} onCreate={createSecret} />
 
-        <section className="panel" aria-labelledby="unseal-title">
-          <div className="panel-heading">
-            <h2 id="unseal-title">Custodian unseal</h2>
-            <span>
-              {snapshot.state?.sharesSubmitted ?? 0}/{snapshot.state?.threshold ?? 3}
-            </span>
-          </div>
-          <p className="muted">Use any three demo shares after sealing the vault.</p>
-          <textarea
-            aria-label="Custodian share"
-            value={shareInput}
-            onChange={(event) => setShareInput(event.target.value)}
-            rows={4}
-            placeholder={snapshot.shares[0] ?? 'vmshare-...'}
-          />
-          <div className="button-row">
-            <button
-              type="button"
-              onClick={() => void runAction(() => api.unseal(shareInput), 'Share accepted')}
-              disabled={!shareInput.trim()}
-            >
-              Submit share
-            </button>
-            <button type="button" className="secondary" onClick={() => setShareInput(snapshot.shares[0] ?? '')}>
-              Load sample
-            </button>
-          </div>
-        </section>
+        <UnsealPanel
+          state={state}
+          shares={snapshot.shares}
+          busy={busy}
+          onSubmit={submitShare}
+          onReset={() => void runAction(api.resetUnseal, 'Submitted shares cleared')}
+        />
 
-        <section className="panel" aria-labelledby="leases-title">
-          <div className="panel-heading">
-            <h2 id="leases-title">Dynamic leases</h2>
-          </div>
-          <div className="stack-list">
-            {snapshot.leases.length === 0 ? <p className="muted">No leases have been issued.</p> : null}
-            {snapshot.leases.map((lease) => (
-              <article key={lease.id} className="list-item">
-                <div>
-                  <strong>{lease.secretPath}</strong>
-                  <small>
-                    {lease.status} until {formatDate(lease.expiresAt)}
-                  </small>
-                </div>
-                {lease.status === 'ACTIVE' ? (
-                  <div className="button-row compact">
-                    <button type="button" className="small" onClick={() => void runAction(() => api.renewLease(lease.id, 30), 'Lease renewed')}>
-                      Renew
-                    </button>
-                    <button type="button" className="small secondary" onClick={() => void runAction(() => api.revokeLease(lease.id), 'Lease revoked')}>
-                      Revoke
-                    </button>
-                  </div>
-                ) : null}
-              </article>
-            ))}
-          </div>
-        </section>
+        <LeaseList
+          leases={snapshot.leases}
+          disabled={busy || sealed}
+          onRenew={(lease) => void runAction(() => api.renewLease(lease.id, 30), `Lease for ${lease.secretPath} renewed`)}
+          onRevoke={(lease) => void runAction(() => api.revokeLease(lease.id), `Lease for ${lease.secretPath} revoked`)}
+        />
 
         <section className="panel" aria-labelledby="keks-title">
           <div className="panel-heading">
             <h2 id="keks-title">Key versions</h2>
             <span>{snapshot.keks.length} versions</span>
           </div>
-          <div className="stack-list">
+          <ul className="stack-list">
             {snapshot.keks.map((kek) => (
-              <article key={kek.version} className="list-item">
+              <li key={kek.version} className="list-item">
                 <div>
                   <strong>KEK v{kek.version}</strong>
-                  <small>{kek.secretsCount} secrets using this version</small>
+                  <small>
+                    {kek.secretsCount} {kek.secretsCount === 1 ? 'secret' : 'secrets'}, created {formatDateTime(kek.createdAt)}
+                  </small>
                 </div>
                 <span className={kek.isActive ? 'tag active' : 'tag'}>{kek.isActive ? 'Active' : 'Historical'}</span>
-              </article>
+              </li>
             ))}
-          </div>
+          </ul>
         </section>
 
-        <section className="panel" aria-labelledby="audit-title">
-          <div className="panel-heading">
-            <h2 id="audit-title">Audit ledger</h2>
-            <span>{snapshot.auditVerification?.isValid ? 'Verified' : 'Check pending'}</span>
-          </div>
-          <div className="stack-list">
-            {snapshot.audit.map((entry) => (
-              <article key={entry.id} className="list-item">
-                <div>
-                  <strong>{entry.action}</strong>
-                  <small>{entry.details}</small>
-                </div>
-                <span className="mono hash">{maskCiphertext(entry.entryHash)}</span>
-              </article>
-            ))}
-          </div>
-        </section>
+        <AuditLedger entries={snapshot.audit} verification={snapshot.auditVerification} />
       </div>
 
-      {selectedSecret ? (
-        <section className="drawer" aria-label="Selected secret">
-          <div>
-            <p className="eyebrow">Decrypted preview</p>
-            <h2>{selectedSecret.name}</h2>
-            <p className="muted">{selectedSecret.path}</p>
-          </div>
-          <pre>{selectedSecret.plaintext}</pre>
-          <button type="button" className="secondary" onClick={() => setSelectedSecret(null)}>
-            Close
-          </button>
-        </section>
-      ) : null}
+      {selectedSecret ? <SecretDrawer secret={selectedSecret} onClose={closeDrawer} /> : null}
     </main>
   );
 }

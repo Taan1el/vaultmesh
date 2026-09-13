@@ -32,7 +32,7 @@ button {
   padding: 0.72rem 1rem;
 }
 
-button:hover {
+button:hover:not(:disabled) {
   background: #235847;
 }
 
@@ -49,6 +49,32 @@ button.secondary {
 button.small {
   min-height: 34px;
   padding: 0.45rem 0.7rem;
+}
+
+button.secondary:hover:not(:disabled) {
+  background: #c8d5ce;
+}
+
+button.secondary:disabled {
+  background: #e6ebe8;
+  color: #7b8783;
+}
+
+:focus-visible {
+  outline: 3px solid #2f7d62;
+  outline-offset: 2px;
+}
+
+.sr-only {
+  border: 0;
+  clip: rect(0 0 0 0);
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  padding: 0;
+  position: absolute;
+  white-space: nowrap;
+  width: 1px;
 }
 
 .shell {
@@ -80,9 +106,9 @@ p {
 }
 
 h1 {
-  font-size: clamp(2.2rem, 6vw, 4.8rem);
-  line-height: 0.96;
-  margin-bottom: 1rem;
+  font-size: clamp(2rem, 4.5vw, 3.2rem);
+  line-height: 1.05;
+  margin-bottom: 0.75rem;
   max-width: 780px;
 }
 
@@ -117,6 +143,12 @@ h2 {
   color: #7a5300;
 }
 
+.status-pill.loading {
+  background: #eef3f1;
+  border: 1px solid #cbd7d2;
+  color: #42524d;
+}
+
 .status-pill.unsealed,
 .tag.active {
   background: #dff5e9;
@@ -139,9 +171,21 @@ h2 {
 
 .toolbar,
 .button-row {
+  align-items: center;
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
+}
+
+.hint {
+  color: #5a6964;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  margin: 12px 0 0;
+}
+
+.toolbar-hint {
+  margin: 0;
 }
 
 .metrics {
@@ -207,12 +251,25 @@ small {
 }
 
 .notice {
-  background: #fff7e8;
-  border: 1px solid #ebca88;
   border-radius: 6px;
-  color: #62450d;
   margin: 18px 0 0;
   padding: 0.8rem 1rem;
+}
+
+.notice.success {
+  background: #e7f6ee;
+  border: 1px solid #8fcaa9;
+  color: #145c37;
+}
+
+.notice.error {
+  background: #fdecea;
+  border: 1px solid #e3a39b;
+  color: #8a1f14;
+}
+
+.danger-text {
+  color: #a1281a !important;
 }
 
 .table-wrap {
@@ -243,6 +300,13 @@ td strong,
   display: block;
 }
 
+td strong .tag,
+.list-item strong .tag {
+  margin-left: 0.5rem;
+  padding: 0.15rem 0.5rem;
+  vertical-align: middle;
+}
+
 td small,
 .list-item small {
   display: block;
@@ -265,6 +329,15 @@ label {
   font-size: 0.9rem;
   font-weight: 750;
   gap: 6px;
+}
+
+.field {
+  display: grid;
+  gap: 6px;
+}
+
+#custodian-share {
+  margin: 6px 0 12px;
 }
 
 input,
@@ -293,6 +366,9 @@ textarea {
 .stack-list {
   display: grid;
   gap: 10px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
 }
 
 .list-item {
@@ -310,21 +386,34 @@ textarea {
   flex-wrap: nowrap;
 }
 
+.item-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
 .tag {
   background: #eef3f1;
-  color: #52615d;
+  color: #4b5a56;
+}
+
+.tag.warn {
+  background: #fff1d6;
+  color: #7a4d00;
 }
 
 .hash {
   color: #355f55;
-  max-width: 180px;
-  overflow-wrap: anywhere;
+  flex-shrink: 0;
   text-align: right;
+  white-space: nowrap;
 }
 
 .drawer {
   bottom: 18px;
-  max-width: min(560px, calc(100vw - 32px));
+  width: min(560px, calc(100vw - 36px));
   padding: 18px;
   position: fixed;
   right: 18px;
@@ -354,5 +443,9 @@ textarea {
   .list-item {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .item-actions {
+    justify-content: flex-start;
   }
 }

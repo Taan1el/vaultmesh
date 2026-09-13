@@ -10,51 +10,79 @@ import type {
   VaultState,
 } from '../../../shared/types';
 
+/** Everything the dashboard needs from a vault backend. */
+export interface VaultApi {
+  status(): Promise<VaultState>;
+  demoShares(): Promise<{ shares: string[] }>;
+  seal(): Promise<{ message: string; state: VaultState }>;
+  unseal(share: string): Promise<UnsealProgress>;
+  resetUnseal(): Promise<{ message: string }>;
+  rotateKek(): Promise<KekVersionInfo>;
+  rewrapSecrets(): Promise<{ rewrappedCount: number; activeVersion: number }>;
+  keks(): Promise<KekVersionInfo[]>;
+  secrets(): Promise<StoredSecret[]>;
+  readSecret(path: string): Promise<DecryptedSecret>;
+  createSecret(dto: CreateSecretDto): Promise<StoredSecret>;
+  deleteSecret(path: string): Promise<{ message: string; path: string }>;
+  leases(): Promise<SecretLease[]>;
+  renewLease(id: string, incrementSeconds: number): Promise<SecretLease>;
+  revokeLease(id: string): Promise<SecretLease>;
+  audit(limit?: number): Promise<AuditEntry[]>;
+  verifyAudit(): Promise<AuditVerificationResult>;
+}
+
 // The API rejects POSTs that are not JSON, so every POST sends this header.
 const jsonHeaders = { 'Content-Type': 'application/json' };
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(url, init);
+  let response: Response;
+  try {
+    response = await fetch(url, init);
+  } catch {
+    throw new Error('Could not reach the VaultMesh API. Check that the server is running.');
+  }
   const payload = await response.json().catch(() => ({}));
 
   if (!response.ok) {
-    const message = typeof payload.error === 'string' ? payload.error : `Request failed with ${response.status}`;
+    const message =
+      payload && typeof payload.error === 'string' ? payload.error : `Request failed with status ${response.status}`;
     throw new Error(message);
   }
 
   return payload as T;
 }
 
-export const api = {
-  status: () => request<VaultState>('/api/vault/status'),
-  demoShares: () => request<{ shares: string[] }>('/api/vault/demo-shares'),
-  seal: () => request<{ message: string; state: VaultState }>('/api/vault/seal', { method: 'POST', headers: jsonHeaders }),
-  unseal: (share: string) =>
-    request<UnsealProgress>('/api/vault/unseal', {
-      method: 'POST',
-      headers: jsonHeaders,
-      body: JSON.stringify({ share }),
-    }),
-  rotateKek: () => request<KekVersionInfo>('/api/vault/keks/rotate', { method: 'POST', headers: jsonHeaders }),
-  rewrapSecrets: () =>
-    request<{ rewrappedCount: number; activeVersion: number }>('/api/vault/keks/rewrap', { method: 'POST', headers: jsonHeaders }),
-  keks: () => request<KekVersionInfo[]>('/api/vault/keks'),
-  secrets: () => request<StoredSecret[]>('/api/secrets'),
-  readSecret: (path: string) => request<DecryptedSecret>(`/api/secrets/${path}`),
-  createSecret: (dto: CreateSecretDto) =>
-    request<StoredSecret>('/api/secrets', {
-      method: 'POST',
-      headers: jsonHeaders,
-      body: JSON.stringify(dto),
-    }),
-  leases: () => request<SecretLease[]>('/api/leases'),
-  renewLease: (id: string, incrementSeconds: number) =>
-    request<SecretLease>(`/api/leases/${id}/renew`, {
-      method: 'POST',
-      headers: jsonHeaders,
-      body: JSON.stringify({ incrementSeconds }),
-    }),
-  revokeLease: (id: string) => request<SecretLease>(`/api/leases/${id}/revoke`, { method: 'POST', headers: jsonHeaders }),
-  audit: () => request<AuditEntry[]>('/api/audit?limit=8'),
-  verifyAudit: () => request<AuditVerificationResult>('/api/audit/verify'),
+function post<T>(url: string, body?: unknown): Promise<T> {
+  return request<T>(url, {
+    method: 'POST',
+    headers: jsonHeaders,
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+}
+
+/** Encodes each path segment so the wildcard route receives the path unchanged. */
+export function secretUrl(path: string): string {
+  return `/api/secrets/${path.split('/').map(encodeURIComponent).join('/')}`;
+}
+
+export const httpApi: VaultApi = {
+  status: () => request('/api/vault/status'),
+  demoShares: () => request('/api/vault/demo-shares'),
+  seal: () => post('/api/vault/seal'),
+  unseal: (share) => post('/api/vault/unseal', { share }),
+  resetUnseal: () => post('/api/vault/unseal/reset'),
+  rotateKek: () => post('/api/vault/keks/rotate'),
+  rewrapSecrets: () => post('/api/vault/keks/rewrap'),
+  keks: () => request('/api/vault/keks'),
+  secrets: () => request('/api/secrets'),
+  readSecret: (path) => request(secretUrl(path)),
+  createSecret: (dto) => post('/api/secrets', dto),
+  deleteSecret: (path) => request(secretUrl(path), { method: 'DELETE' }),
+  leases: () => request('/api/leases'),
+  renewLease: (id, incrementSeconds) => post(`/api/leases/${encodeURIComponent(id)}/renew`, { incrementSeconds }),
+  revokeLease: (id) => post(`/api/leases/${encodeURIComponent(id)}/revoke`),
+  audit: (limit = 8) => request(`/api/audit?limit=${limit}`),
+  verifyAudit: () => request('/api/audit/verify'),
 };
+
+export const api: VaultApi = httpApi;
