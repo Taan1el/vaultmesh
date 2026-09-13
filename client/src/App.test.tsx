@@ -11,8 +11,20 @@ import type {
 import type { VaultApi } from './services/api';
 import { App } from './App';
 
-const mocks = vi.hoisted(() => ({ api: {} as VaultApi }));
-vi.mock('./services/api', () => ({ api: mocks.api }));
+const mocks = vi.hoisted(() => ({
+  api: {} as VaultApi,
+  demoMode: false,
+  resetDemoData: null as null | (() => Promise<void>),
+}));
+vi.mock('./services/api', () => ({
+  api: mocks.api,
+  get isDemoMode() {
+    return mocks.demoMode;
+  },
+  get resetDemoData() {
+    return mocks.demoMode ? mocks.resetDemoData : null;
+  },
+}));
 
 const now = Date.now();
 const iso = (offsetMs: number) => new Date(now + offsetMs).toISOString();
@@ -173,6 +185,8 @@ let fake: ReturnType<typeof createFakeApi>;
 beforeEach(() => {
   fake = createFakeApi();
   Object.assign(mocks.api, fake.api);
+  mocks.demoMode = false;
+  mocks.resetDemoData = null;
 });
 
 afterEach(() => {
@@ -331,6 +345,30 @@ describe('App', () => {
     await renderLoaded();
     fireEvent.click(screen.getByRole('button', { name: /Re-wrap secrets/ }));
     expect(await screen.findByText('Re-wrapped 2 secrets to KEK v1')).toBeInTheDocument();
+  });
+
+  it('hides the demo banner when running against the API', async () => {
+    await renderLoaded();
+    expect(screen.queryByRole('complementary', { name: 'Demo mode' })).not.toBeInTheDocument();
+  });
+
+  it('shows the demo banner and resets demo data after confirmation', async () => {
+    mocks.demoMode = true;
+    mocks.resetDemoData = vi.fn(async () => {});
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    await renderLoaded();
+
+    const banner = screen.getByRole('complementary', { name: 'Demo mode' });
+    expect(banner).toHaveTextContent('Demo mode: data is simulated in your browser.');
+    expect(within(banner).getByRole('link', { name: 'Source on GitHub' })).toHaveAttribute(
+      'href',
+      'https://github.com/Taan1el/vaultmesh'
+    );
+
+    fireEvent.click(within(banner).getByRole('button', { name: 'Reset demo data' }));
+
+    expect(await screen.findByText('Demo data reset')).toBeInTheDocument();
+    expect(mocks.resetDemoData).toHaveBeenCalledTimes(1);
   });
 
   it('flags a broken audit chain', async () => {

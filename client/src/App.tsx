@@ -9,9 +9,10 @@ import type {
   StoredSecret,
   VaultState,
 } from '../../shared/types';
-import { api } from './services/api';
+import { api, isDemoMode, resetDemoData } from './services/api';
 import { AuditLedger } from './components/AuditLedger';
 import { CreateSecretForm } from './components/CreateSecretForm';
+import { DemoBanner } from './components/DemoBanner';
 import { LeaseList } from './components/LeaseList';
 import { SecretDrawer } from './components/SecretDrawer';
 import { UnsealPanel } from './components/UnsealPanel';
@@ -154,6 +155,13 @@ export function App() {
     );
   }
 
+  async function resetDemo() {
+    if (!resetDemoData) return;
+    if (!window.confirm('Reset the demo? Everything you changed in this browser is replaced with fresh sample data.')) return;
+    setSelectedSecret(null);
+    await runAction(resetDemoData, 'Demo data reset');
+  }
+
   function createSecret(dto: CreateSecretDto): Promise<boolean> {
     return runAction(() => api.createSecret(dto), `Encrypted and stored ${dto.path.trim()}`);
   }
@@ -165,6 +173,7 @@ export function App() {
 
   return (
     <main className="shell">
+      {isDemoMode ? <DemoBanner onReset={() => void resetDemo()} busy={busy} /> : null}
       <section className="masthead" aria-labelledby="page-title">
         <div>
           <p className="eyebrow">VaultMesh</p>

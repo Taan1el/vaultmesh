@@ -9,6 +9,7 @@ import type {
   UnsealProgress,
   VaultState,
 } from '../../../shared/types';
+import { demoApi } from './demoApi';
 
 /** Everything the dashboard needs from a vault backend. */
 export interface VaultApi {
@@ -85,4 +86,11 @@ export const httpApi: VaultApi = {
   verifyAudit: () => request('/api/audit/verify'),
 };
 
-export const api: VaultApi = httpApi;
+/** True in the static GitHub Pages build, where the vault runs in the browser. */
+export const isDemoMode = import.meta.env.VITE_DEMO_MODE === 'true';
+
+// The one place that picks the backend for the whole dashboard.
+export const api: VaultApi = isDemoMode ? demoApi : httpApi;
+
+/** Clears the in-browser demo vault. Only available in demo mode. */
+export const resetDemoData: (() => Promise<void>) | null = isDemoMode ? () => demoApi.reset() : null;
