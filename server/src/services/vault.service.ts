@@ -18,6 +18,7 @@ import {
 import { badRequest, conflict, notFound, vaultSealed, VaultError } from '../../../shared/errors.js';
 import { parseCreateSecretInput, parseRenewIncrement, parseSecretPath } from '../../../shared/validation.js';
 import { formatShare, type SharePoint } from '../../../shared/shamir.js';
+import { assertLeaseRevocable, LEASE_MAX_RENEWALS, planLeaseRenewal } from '../../../shared/leases.js';
 
 const UNSEAL_THRESHOLD = 3;
 const TOTAL_SHARES = 5;
@@ -423,6 +424,7 @@ export class VaultService {
     const id = `sec_${crypto.randomBytes(8).toString('hex')}`;
     const now = new Date().toISOString();
     const { isDynamic, ttlSeconds, maxTtlSeconds } = input;
+    let lease: SecretLease | undefined;
 
     rawDb.exec('BEGIN IMMEDIATE;');
     try {
@@ -449,12 +451,7 @@ export class VaultService {
       );
 
       if (isDynamic) {
-        const leaseId = `lease_${crypto.randomBytes(10).toString('hex')}`;
-        const expiresAt = new Date(Date.now() + ttlSeconds * 1000).toISOString();
-        rawDb.prepare(`
-          INSERT INTO leases (id, secret_id, secret_path, issued_at, expires_at, ttl_seconds, renew_count, max_renewals, status)
-          VALUES (?, ?, ?, ?, ?, ?, 0, 5, 'ACTIVE')
-        `).run(leaseId, id, normalizedPath, now, expiresAt, ttlSeconds);
+        lease = this.insertLease(id, normalizedPath, ttlSeconds);
       }
 
       rawDb.exec('COMMIT;');
@@ -474,6 +471,7 @@ export class VaultService {
       status: 'SUCCESS',
       details: `Created secret under KEK v${pkg.kekVersion} (Dynamic: ${isDynamic})`,
     });
+    if (lease) this.auditLeaseIssued(lease, actor, ip);
 
     return {
       id,
@@ -536,25 +534,20 @@ export class VaultService {
       // plain text string
     }
 
+    // Reading a dynamic secret returns its current lease. When the last lease
+    // expired or was revoked, the read issues a new one.
     let lease: SecretLease | undefined;
+    let issuedLease = false;
     if (Boolean(row.is_dynamic)) {
       const activeLease = rawDb.prepare(`
-        SELECT * FROM leases WHERE secret_id = ? AND status = 'ACTIVE' ORDER BY expires_at DESC LIMIT 1
-      `).get(row.id) as any;
+        SELECT * FROM leases WHERE secret_id = ? AND status = 'ACTIVE' AND expires_at > ? ORDER BY expires_at DESC LIMIT 1
+      `).get(row.id, new Date().toISOString()) as any;
 
       if (activeLease) {
-        lease = {
-          id: activeLease.id,
-          secretId: activeLease.secret_id,
-          secretPath: activeLease.secret_path,
-          issuedAt: activeLease.issued_at,
-          expiresAt: activeLease.expires_at,
-          ttlSeconds: activeLease.ttl_seconds,
-          renewCount: activeLease.renew_count,
-          maxRenewals: activeLease.max_renewals,
-          status: activeLease.status,
-          revokedAt: activeLease.revoked_at,
-        };
+        lease = this.toLease(activeLease);
+      } else {
+        lease = this.insertLease(row.id, row.path, row.ttl_seconds);
+        issuedLease = true;
       }
     }
 
@@ -566,6 +559,7 @@ export class VaultService {
       status: 'SUCCESS',
       details: `Read and decrypted secret with KEK v${row.kek_version}`,
     });
+    if (lease && issuedLease) this.auditLeaseIssued(lease, actor, ip);
 
     return {
       id: row.id,
@@ -639,52 +633,38 @@ export class VaultService {
     const increment = parseRenewIncrement(incrementSeconds);
     this.assertUnsealed();
     const rawDb = this.db.getDb();
-    const lease = rawDb.prepare('SELECT * FROM leases WHERE id = ?').get(leaseId) as any;
+    const row = rawDb.prepare(`
+      SELECT l.*, s.max_ttl_seconds FROM leases l LEFT JOIN secrets s ON s.id = l.secret_id WHERE l.id = ?
+    `).get(leaseId) as any;
 
-    if (!lease) throw notFound(`Lease "${leaseId}" not found`);
-    if (lease.status !== 'ACTIVE') throw conflict(`Cannot renew lease with status "${lease.status}"`);
-    if (lease.renew_count >= lease.max_renewals) {
-      throw conflict(`Maximum renewal count (${lease.max_renewals}) reached for lease "${leaseId}"`);
-    }
-
-    const currentExpiry = new Date(lease.expires_at).getTime();
-    const now = Date.now();
-    const baseTime = currentExpiry > now ? currentExpiry : now;
-    const newExpiresAt = new Date(baseTime + increment * 1000).toISOString();
-    const newRenewCount = lease.renew_count + 1;
+    if (!row) throw notFound(`Lease "${leaseId}" not found`);
+    const lease = this.toLease(row);
+    const renewal = planLeaseRenewal(lease, row.max_ttl_seconds ?? 0, increment, Date.now());
 
     rawDb.prepare(`
       UPDATE leases SET expires_at = ?, renew_count = ? WHERE id = ?
-    `).run(newExpiresAt, newRenewCount, leaseId);
+    `).run(renewal.expiresAt, renewal.renewCount, leaseId);
 
     this.recordAudit({
       action: 'LEASE_RENEW',
-      secretPath: lease.secret_path,
+      secretPath: lease.secretPath,
       actor,
       ip,
       status: 'SUCCESS',
-      details: `Lease "${leaseId}" renewed (Attempt ${newRenewCount}/${lease.max_renewals}) until ${newExpiresAt}`,
+      details: `Lease "${leaseId}" renewed (${renewal.renewCount}/${lease.maxRenewals}) until ${renewal.expiresAt}`,
     });
 
-    return {
-      id: lease.id,
-      secretId: lease.secret_id,
-      secretPath: lease.secret_path,
-      issuedAt: lease.issued_at,
-      expiresAt: newExpiresAt,
-      ttlSeconds: lease.ttl_seconds,
-      renewCount: newRenewCount,
-      maxRenewals: lease.max_renewals,
-      status: 'ACTIVE',
-    };
+    return { ...lease, expiresAt: renewal.expiresAt, renewCount: renewal.renewCount };
   }
 
   revokeLease(leaseId: string, actor = 'client-app', ip = '127.0.0.1'): SecretLease {
     this.assertUnsealed();
     const rawDb = this.db.getDb();
-    const lease = rawDb.prepare('SELECT * FROM leases WHERE id = ?').get(leaseId) as any;
+    const row = rawDb.prepare('SELECT * FROM leases WHERE id = ?').get(leaseId) as any;
 
-    if (!lease) throw notFound(`Lease "${leaseId}" not found`);
+    if (!row) throw notFound(`Lease "${leaseId}" not found`);
+    const lease = this.toLease(row);
+    assertLeaseRevocable(lease);
     const now = new Date().toISOString();
 
     rawDb.prepare(`
@@ -693,42 +673,66 @@ export class VaultService {
 
     this.recordAudit({
       action: 'LEASE_REVOKE',
-      secretPath: lease.secret_path,
+      secretPath: lease.secretPath,
       actor,
       ip,
       status: 'SUCCESS',
-      details: `Lease "${leaseId}" manually revoked by ${actor}`,
+      details: `Lease "${leaseId}" revoked by ${actor}`,
     });
 
-    return {
-      id: lease.id,
-      secretId: lease.secret_id,
-      secretPath: lease.secret_path,
-      issuedAt: lease.issued_at,
-      expiresAt: lease.expires_at,
-      ttlSeconds: lease.ttl_seconds,
-      renewCount: lease.renew_count,
-      maxRenewals: lease.max_renewals,
-      status: 'REVOKED',
-      revokedAt: now,
-    };
+    return { ...lease, status: 'REVOKED', revokedAt: now };
   }
 
   listLeases(): SecretLease[] {
     const rawDb = this.db.getDb();
     const rows = rawDb.prepare('SELECT * FROM leases ORDER BY issued_at DESC LIMIT 50').all() as any[];
-    return rows.map((r) => ({
-      id: r.id,
-      secretId: r.secret_id,
-      secretPath: r.secret_path,
-      issuedAt: r.issued_at,
-      expiresAt: r.expires_at,
-      ttlSeconds: r.ttl_seconds,
-      renewCount: r.renew_count,
-      maxRenewals: r.max_renewals,
-      status: r.status,
-      revokedAt: r.revoked_at,
-    }));
+    return rows.map((r) => this.toLease(r));
+  }
+
+  private toLease(row: any): SecretLease {
+    return {
+      id: row.id,
+      secretId: row.secret_id,
+      secretPath: row.secret_path,
+      issuedAt: row.issued_at,
+      expiresAt: row.expires_at,
+      ttlSeconds: row.ttl_seconds,
+      renewCount: row.renew_count,
+      maxRenewals: row.max_renewals,
+      status: row.status,
+      ...(row.revoked_at ? { revokedAt: row.revoked_at } : {}),
+    };
+  }
+
+  private insertLease(secretId: string, secretPath: string, ttlSeconds: number): SecretLease {
+    const issued = Date.now();
+    const lease: SecretLease = {
+      id: `lease_${crypto.randomBytes(10).toString('hex')}`,
+      secretId,
+      secretPath,
+      issuedAt: new Date(issued).toISOString(),
+      expiresAt: new Date(issued + ttlSeconds * 1000).toISOString(),
+      ttlSeconds,
+      renewCount: 0,
+      maxRenewals: LEASE_MAX_RENEWALS,
+      status: 'ACTIVE',
+    };
+    this.db.getDb().prepare(`
+      INSERT INTO leases (id, secret_id, secret_path, issued_at, expires_at, ttl_seconds, renew_count, max_renewals, status)
+      VALUES (?, ?, ?, ?, ?, ?, 0, ?, 'ACTIVE')
+    `).run(lease.id, secretId, secretPath, lease.issuedAt, lease.expiresAt, ttlSeconds, LEASE_MAX_RENEWALS);
+    return lease;
+  }
+
+  private auditLeaseIssued(lease: SecretLease, actor: string, ip: string): void {
+    this.recordAudit({
+      action: 'LEASE_ISSUE',
+      secretPath: lease.secretPath,
+      actor,
+      ip,
+      status: 'SUCCESS',
+      details: `Lease "${lease.id}" issued for ${lease.ttlSeconds} seconds`,
+    });
   }
 
   private startLeaseReaper(): void {

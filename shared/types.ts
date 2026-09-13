@@ -12,6 +12,7 @@ export type AuditAction =
   | 'SECRET_DELETE'
   | 'SECRET_REWRAP'
   | 'KEK_ROTATE'
+  | 'LEASE_ISSUE'
   | 'LEASE_RENEW'
   | 'LEASE_REVOKE'
   | 'LEASE_EXPIRE';
