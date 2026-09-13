@@ -6,24 +6,59 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+
 jobs:
   test:
+    name: Test on Node ${{ matrix.node }}
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [22, 24]
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
-          node-version: 24
+          node-version: ${{ matrix.node }}
           cache: npm
 
-      - name: Install dependencies
-        run: npm ci
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
+      - run: npm run build:pages
 
-      - name: Run tests
-        run: npm test
+  docker:
+    name: Docker image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
 
-      - name: Build
-        run: npm run build
+      - uses: docker/setup-buildx-action@v4
+
+      - name: Build image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          load: true
+          push: false
+          tags: vaultmesh:ci
+
+      - name: Start container and check it responds
+        run: |
+          docker run -d --name vaultmesh -p 127.0.0.1:4005:4005 vaultmesh:ci
+          for i in $(seq 1 30); do
+            if curl -sf http://127.0.0.1:4005/health; then break; fi
+            sleep 1
+          done
+          curl -sf http://127.0.0.1:4005/api/vault/status
+          curl -sf http://127.0.0.1:4005/ | grep -q '<div id="root"></div>'
+          test "$(docker exec vaultmesh id -u)" != "0"
+          docker exec vaultmesh test -f /app/data/vaultmesh.db
+
+      - name: Container logs
+        if: always()
+        run: docker logs vaultmesh || true
