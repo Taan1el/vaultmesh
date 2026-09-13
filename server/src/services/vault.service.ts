@@ -16,6 +16,7 @@ import {
   AuditVerificationResult,
 } from '../../../shared/types.js';
 import { badRequest, conflict, notFound, vaultSealed, VaultError } from '../../../shared/errors.js';
+import { parseCreateSecretInput, parseRenewIncrement, parseSecretPath } from '../../../shared/validation.js';
 
 export class VaultService {
   private db: VaultDatabase;
@@ -370,6 +371,7 @@ export class VaultService {
   }
 
   createSecret(dto: CreateSecretDto, actor = 'developer', ip = '127.0.0.1'): StoredSecret {
+    const input = parseCreateSecretInput(dto);
     this.assertUnsealed();
     const rawDb = this.db.getDb();
     const activeState = this.getState();
@@ -378,14 +380,12 @@ export class VaultService {
 
     if (!activeKek) throw new VaultError(500, `Active KEK v${activeVersion} is not loaded`);
 
-    const normalizedPath = dto.path.trim().replace(/^\/+|\/+$/g, '');
-    const pkg: EnvelopeEncryptedPackage = EnvelopeEncryption.encrypt(dto.plaintext, activeKek, activeVersion);
+    const normalizedPath = input.path;
+    const pkg: EnvelopeEncryptedPackage = EnvelopeEncryption.encrypt(input.plaintext, activeKek, activeVersion);
 
     const id = `sec_${crypto.randomBytes(8).toString('hex')}`;
     const now = new Date().toISOString();
-    const isDynamic = Boolean(dto.isDynamic);
-    const ttlSeconds = dto.ttlSeconds || (isDynamic ? 60 : 0);
-    const maxTtlSeconds = dto.maxTtlSeconds || (isDynamic ? 300 : 0);
+    const { isDynamic, ttlSeconds, maxTtlSeconds } = input;
 
     rawDb.exec('BEGIN IMMEDIATE;');
     try {
@@ -396,8 +396,8 @@ export class VaultService {
       `).run(
         id,
         normalizedPath,
-        dto.name,
-        dto.description || '',
+        input.name,
+        input.description,
         pkg.kekVersion,
         pkg.encryptedDek,
         pkg.iv,
@@ -441,8 +441,8 @@ export class VaultService {
     return {
       id,
       path: normalizedPath,
-      name: dto.name,
-      description: dto.description || '',
+      name: input.name,
+      description: input.description,
       kekVersion: pkg.kekVersion,
       encryptedDek: pkg.encryptedDek,
       iv: pkg.iv,
@@ -458,9 +458,9 @@ export class VaultService {
   }
 
   readSecret(pathOrId: string, actor = 'developer', ip = '127.0.0.1'): DecryptedSecret {
+    const cleanQuery = parseSecretPath(pathOrId);
     this.assertUnsealed();
     const rawDb = this.db.getDb();
-    const cleanQuery = pathOrId.trim().replace(/^\/+|\/+$/g, '');
 
     const row = rawDb.prepare(`
       SELECT * FROM secrets WHERE path = ? OR id = ?
@@ -569,9 +569,9 @@ export class VaultService {
   }
 
   deleteSecret(pathOrId: string, actor = 'developer', ip = '127.0.0.1'): { path: string } {
+    const cleanQuery = parseSecretPath(pathOrId);
     this.assertUnsealed();
     const rawDb = this.db.getDb();
-    const cleanQuery = pathOrId.trim().replace(/^\/+|\/+$/g, '');
 
     const row = rawDb.prepare('SELECT id, path FROM secrets WHERE path = ? OR id = ?').get(cleanQuery, cleanQuery) as any;
     if (!row) throw notFound(`Secret not found at path "${cleanQuery}"`);
@@ -598,7 +598,8 @@ export class VaultService {
     return { path: row.path };
   }
 
-  renewLease(leaseId: string, incrementSeconds = 30, actor = 'client-app', ip = '127.0.0.1'): SecretLease {
+  renewLease(leaseId: string, incrementSeconds?: unknown, actor = 'client-app', ip = '127.0.0.1'): SecretLease {
+    const increment = parseRenewIncrement(incrementSeconds);
     this.assertUnsealed();
     const rawDb = this.db.getDb();
     const lease = rawDb.prepare('SELECT * FROM leases WHERE id = ?').get(leaseId) as any;
@@ -612,7 +613,7 @@ export class VaultService {
     const currentExpiry = new Date(lease.expires_at).getTime();
     const now = Date.now();
     const baseTime = currentExpiry > now ? currentExpiry : now;
-    const newExpiresAt = new Date(baseTime + incrementSeconds * 1000).toISOString();
+    const newExpiresAt = new Date(baseTime + increment * 1000).toISOString();
     const newRenewCount = lease.renew_count + 1;
 
     rawDb.prepare(`

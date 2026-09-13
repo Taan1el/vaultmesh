@@ -1,6 +1,8 @@
 import { Request, Response } from 'express';
 import { VaultService } from '../services/vault.service.js';
 import { badRequest } from '../../../shared/errors.js';
+import { parseAuditLimit, sanitizeActor } from '../../../shared/validation.js';
+import type { CreateSecretDto } from '../../../shared/types.js';
 
 // Handlers are synchronous, so Express passes any thrown error to the JSON
 // error handler registered in app.ts.
@@ -50,24 +52,9 @@ export class VaultController {
   };
 
   createSecret = (req: Request, res: Response): void => {
-    const { path, name, description, plaintext, isDynamic, ttlSeconds, maxTtlSeconds } = req.body ?? {};
-    if (!path || !name || plaintext === undefined) {
-      throw badRequest('path, name, and plaintext are required fields');
-    }
-
-    const secret = this.vaultService.createSecret(
-      {
-        path,
-        name,
-        description,
-        plaintext: typeof plaintext === 'string' ? plaintext : JSON.stringify(plaintext),
-        isDynamic,
-        ttlSeconds,
-        maxTtlSeconds,
-      },
-      this.actor(req, 'developer'),
-      this.ip(req)
-    );
+    // The service validates the body and applies defaults.
+    const body = req.body as CreateSecretDto;
+    const secret = this.vaultService.createSecret(body, this.actor(req, 'developer'), this.ip(req));
     res.status(201).json(secret);
   };
 
@@ -100,7 +87,7 @@ export class VaultController {
   };
 
   getAuditLog = (req: Request, res: Response): void => {
-    const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 50;
+    const limit = parseAuditLimit(req.query.limit);
     res.json(this.vaultService.getAuditLog(limit));
   };
 
@@ -109,7 +96,7 @@ export class VaultController {
   };
 
   private actor(req: Request, fallback: string): string {
-    return (req.headers['x-actor'] as string) || fallback;
+    return sanitizeActor(req.headers['x-actor'], fallback);
   }
 
   private ip(req: Request): string {
