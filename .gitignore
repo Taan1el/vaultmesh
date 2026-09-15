@@ -2,7 +2,9 @@ node_modules
 dist
 dist-pages
 .env
-data/*.db*
+.env.*
+!.env.example
+server/data/
 coverage
 *.log
 .DS_Store
