@@ -16,7 +16,7 @@ import { DemoBanner } from './components/DemoBanner';
 import { LeaseList } from './components/LeaseList';
 import { SecretDrawer } from './components/SecretDrawer';
 import { UnsealPanel } from './components/UnsealPanel';
-import { errorMessage, formatDateTime, maskHex } from './components/format';
+import { countLabel, errorMessage, formatDateTime, maskHex } from './components/format';
 
 const REFRESH_INTERVAL_MS = 5000;
 const AUDIT_ENTRIES_SHOWN = 8;
@@ -143,7 +143,7 @@ export function App() {
       (progress) =>
         progress.unsealed
           ? 'Vault unsealed'
-          : `Share accepted. ${progress.sharesRemaining} more ${progress.sharesRemaining === 1 ? 'share' : 'shares'} needed.`
+          : `Share accepted. ${countLabel(progress.sharesRemaining, 'more share', 'more shares')} needed.`
     );
   }
 
@@ -151,7 +151,7 @@ export function App() {
     return runAction(api.rewrapSecrets, ({ rewrappedCount, activeVersion }) =>
       rewrappedCount === 0
         ? `Nothing to re-wrap. Every secret already uses KEK v${activeVersion}.`
-        : `Re-wrapped ${rewrappedCount} ${rewrappedCount === 1 ? 'secret' : 'secrets'} to KEK v${activeVersion}`
+        : `Re-wrapped ${countLabel(rewrappedCount, 'secret')} to KEK v${activeVersion}`
     );
   }
 
@@ -238,7 +238,7 @@ export function App() {
         <section className="panel" aria-labelledby="secrets-title">
           <div className="panel-heading">
             <h2 id="secrets-title">Secret inventory</h2>
-            <span>{loading ? 'Loading' : `${snapshot.secrets.length} paths`}</span>
+            <span>{loading ? 'Loading' : countLabel(snapshot.secrets.length, 'path')}</span>
           </div>
           <div className="table-wrap">
             <table>
@@ -323,7 +323,7 @@ export function App() {
         <section className="panel" aria-labelledby="keks-title">
           <div className="panel-heading">
             <h2 id="keks-title">Key versions</h2>
-            <span>{snapshot.keks.length} versions</span>
+            <span>{countLabel(snapshot.keks.length, 'version')}</span>
           </div>
           <ul className="stack-list">
             {snapshot.keks.map((kek) => (
@@ -331,7 +331,7 @@ export function App() {
                 <div>
                   <strong>KEK v{kek.version}</strong>
                   <small>
-                    {kek.secretsCount} {kek.secretsCount === 1 ? 'secret' : 'secrets'}, created {formatDateTime(kek.createdAt)}
+                    {countLabel(kek.secretsCount, 'secret')}, created {formatDateTime(kek.createdAt)}
                   </small>
                 </div>
                 <span className={kek.isActive ? 'tag active' : 'tag'}>{kek.isActive ? 'Active' : 'Historical'}</span>

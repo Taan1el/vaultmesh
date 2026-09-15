@@ -1,5 +1,5 @@
 import type { AuditEntry, AuditVerificationResult } from '../../../shared/types';
-import { formatTime, maskHex } from './format';
+import { countLabel, formatTime, maskHex } from './format';
 
 interface AuditLedgerProps {
   entries: AuditEntry[];
@@ -8,7 +8,7 @@ interface AuditLedgerProps {
 
 function verificationLabel(verification: AuditVerificationResult | null): string {
   if (!verification) return 'Not checked yet';
-  if (verification.isValid) return `Chain verified, ${verification.totalEntries} entries`;
+  if (verification.isValid) return `Chain verified, ${countLabel(verification.totalEntries, 'entry', 'entries')}`;
   return `Chain broken at entry ${(verification.brokenIndex ?? 0) + 1}`;
 }
 
@@ -21,7 +21,9 @@ export function AuditLedger({ entries, verification }: AuditLedgerProps) {
         <h2 id="audit-title">Audit ledger</h2>
         <span className={broken ? 'danger-text' : undefined}>{verificationLabel(verification)}</span>
       </div>
-      <p className="muted">Latest {entries.length} entries. Each hash covers the entry and the hash before it.</p>
+      <p className="muted">
+        Latest {countLabel(entries.length, 'entry', 'entries')}. Each hash covers the entry and the hash before it.
+      </p>
       <ul className="stack-list">
         {entries.map((entry) => (
           <li key={entry.id} className="list-item">

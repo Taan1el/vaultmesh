@@ -206,7 +206,9 @@ describe('App', () => {
     expect(screen.getByText('secret/dynamic/token', { selector: 'td small' })).toBeInTheDocument();
     expect(screen.getByText(/Expires in (49|50) s/)).toBeInTheDocument();
     expect(screen.getByText(/Expired at/)).toBeInTheDocument();
-    expect(screen.getByText('Chain verified, 1 entries')).toBeInTheDocument();
+    expect(screen.getByText('Chain verified, 1 entry')).toBeInTheDocument();
+    expect(screen.getByText('1 version')).toBeInTheDocument();
+    expect(screen.getByText('2 paths')).toBeInTheDocument();
     // Only the active lease offers renew and revoke.
     expect(screen.getAllByRole('button', { name: /Renew lease/ })).toHaveLength(1);
   });

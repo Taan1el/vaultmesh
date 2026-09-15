@@ -30,6 +30,11 @@ export function formatDuration(ms: number): string {
   return seconds === 0 ? `${minutes} min` : `${minutes} min ${seconds} s`;
 }
 
+/** "1 entry", "3 entries" */
+export function countLabel(count: number, singular: string, plural = `${singular}s`): string {
+  return `${count} ${count === 1 ? singular : plural}`;
+}
+
 export function errorMessage(error: unknown, fallback: string): string {
   return error instanceof Error && error.message ? error.message : fallback;
 }
