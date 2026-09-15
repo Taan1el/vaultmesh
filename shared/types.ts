@@ -8,7 +8,6 @@ export type AuditAction =
   | 'VAULT_SEAL'
   | 'SECRET_CREATE'
   | 'SECRET_READ'
-  | 'SECRET_UPDATE'
   | 'SECRET_DELETE'
   | 'SECRET_REWRAP'
   | 'KEK_ROTATE'
@@ -28,7 +27,6 @@ export interface VaultState {
   totalSecrets: number;
   activeLeases: number;
   isInitialized: boolean;
-  unsealedAt?: string;
 }
 
 export interface UnsealProgress {
@@ -121,15 +119,4 @@ export interface AuditVerificationResult {
   totalEntries: number;
   brokenIndex?: number;
   verifiedAt: string;
-}
-
-export interface EnvelopeInspection {
-  path: string;
-  kekVersion: number;
-  encryptedDek: string;
-  iv: string;
-  authTag: string;
-  ciphertextPreview: string;
-  ciphertextSize: number;
-  algorithm: string;
 }
