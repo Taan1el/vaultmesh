@@ -1,4 +1,4 @@
-import { defineConfig } from 'vite';
+import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 
 // "vite build --mode pages" builds the static GitHub Pages demo: it is served
@@ -7,6 +7,10 @@ import react from '@vitejs/plugin-react';
 export default defineConfig(({ mode }) => {
   const pages = mode === 'pages';
   if (pages) process.env.VITE_DEMO_MODE = 'true';
+  // loadEnv reads .env / .env.local (see client/.env.example) and lets an
+  // actual shell environment variable of the same name override the file,
+  // which is what this config itself needs since it runs in Node.
+  const env = loadEnv(mode, process.cwd(), '');
 
   return {
     base: pages ? '/vaultmesh/' : '/',
@@ -18,8 +22,9 @@ export default defineConfig(({ mode }) => {
       port: 3005,
       proxy: {
         '/api': {
-          // Point the dev proxy at another API port with VITE_API_TARGET=http://127.0.0.1:4100
-          target: process.env.VITE_API_TARGET || 'http://127.0.0.1:4005',
+          // Override with VITE_API_TARGET (env var or client/.env.local) when
+          // the server runs on a non-default port.
+          target: env.VITE_API_TARGET || 'http://127.0.0.1:4005',
           changeOrigin: true,
         },
       },
