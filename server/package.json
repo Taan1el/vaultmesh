@@ -1,9 +1,10 @@
 {
   "name": "@vaultmesh/server",
   "version": "1.0.0",
-  "description": "VaultMesh Secrets Manager & KMS Envelope Encryption Engine",
+  "description": "VaultMesh Express API: secrets vault, envelope encryption and SQLite storage",
   "private": true,
   "type": "module",
+  "license": "MIT",
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "tsc",

@@ -1,9 +1,20 @@
 {
   "name": "vaultmesh",
   "version": "1.0.0",
-  "description": "Cloud-Native Secrets Manager, KMS Envelope Encryption & Dynamic Leasing Engine",
+  "description": "Local secrets manager with envelope encryption, Shamir threshold unseal, key rotation and dynamic leases",
   "private": true,
   "type": "module",
+  "homepage": "https://taan1el.github.io/vaultmesh/",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Taan1el/vaultmesh.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Taan1el/vaultmesh/issues"
+  },
+  "engines": {
+    "node": ">=22.5.0"
+  },
   "workspaces": [
     "server",
     "client"
@@ -35,6 +46,6 @@
     "react19",
     "sqlite-wal"
   ],
-  "author": "Taaneiel",
+  "author": "Taaniel Vananurm",
   "license": "MIT"
 }
