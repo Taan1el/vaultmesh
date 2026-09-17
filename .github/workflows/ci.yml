@@ -30,6 +30,12 @@ jobs:
       - run: npm test
       - run: npm run build
       - run: npm run build:pages
+      - name: Install Playwright browser
+        if: matrix.node == 24
+        run: npx playwright install --with-deps chromium
+      - name: Run browser workflow
+        if: matrix.node == 24
+        run: npm run test:e2e
 
   docker:
     name: Docker image

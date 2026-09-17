@@ -28,6 +28,8 @@
     "build:client": "npm run build --workspace=client",
     "build:pages": "npm run build:pages --workspace=client",
     "test": "npm run test:server && npm run test:client",
+    "test:e2e": "playwright test",
+    "screenshots:e2e": "cross-env UPDATE_SCREENSHOTS=1 playwright test tests/e2e/vault-workflow.spec.ts --project=chromium",
     "test:server": "npm run test --workspace=server",
     "test:client": "npm run test --workspace=client",
     "lint": "npm run lint:server && npm run lint:client",
@@ -47,5 +49,9 @@
     "sqlite-wal"
   ],
   "author": "Taaniel Vananurm",
-  "license": "MIT"
+  "license": "MIT",
+  "devDependencies": {
+    "@playwright/test": "^1.63.0",
+    "cross-env": "^10.1.0"
+  }
 }

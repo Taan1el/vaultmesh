@@ -6,5 +6,7 @@ dist-pages
 !.env.example
 server/data/
 coverage
+test-results
+.tmp
 *.log
 .DS_Store

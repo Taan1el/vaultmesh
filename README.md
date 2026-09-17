@@ -65,6 +65,8 @@ Run from the repo root unless noted otherwise.
 | `npm run build` | Builds the server, then the client, for production |
 | `npm run build:pages` | Builds the client in demo mode (`client/dist-pages`), for GitHub Pages |
 | `npm test` | Runs the server test suite, then the client test suite |
+| `npm run test:e2e` | Runs the Playwright browser workflow against the real API and dashboard |
+| `npm run screenshots:e2e` | Runs the Playwright workflow and refreshes the e2e dashboard screenshot |
 | `npm run lint` | Typechecks the server, then the client (`tsc --noEmit`) |
 
 ## How it works
@@ -165,8 +167,9 @@ Shapes (`VaultState`, `StoredSecret`, `DecryptedSecret`, `SecretLease`, `KekVers
 - **API** (`server/test/api-errors.test.ts`, `api-validation.test.ts`): the JSON error shape, unknown routes returning a 404, malformed and oversized request bodies, and that error responses never leak internal detail.
 - **Client** (`client/src/App.test.tsx`, React Testing Library): the unseal flow, secret inventory and inspect drawer, lease countdowns and actions, the audit ledger, and singular/plural count labels.
 - **Demo adapter** (`client/src/services/demoApi.test.ts`, `demoCrypto.test.ts`, `api.test.ts`): the in-browser vault against the same `VaultApi` interface as the real API, Web Crypto envelope encryption round-trips, and the real-vs-demo switch.
+- **Browser workflow** (`tests/e2e/vault-workflow.spec.ts`, Playwright): the real dashboard plus API path for inspect, create dynamic secret, seal, failed read while sealed, three-share unseal, read after unseal, KEK rotate and re-wrap.
 
-Run everything with `npm test` (or `npm run test:server` / `npm run test:client` separately).
+Run the unit and component suites with `npm test` (or `npm run test:server` / `npm run test:client` separately). Run the browser workflow with `npm run test:e2e`.
 
 ## Deployment
 
@@ -193,7 +196,7 @@ Serves the built dashboard and API together at **http://localhost:4005**. Compos
 - Role-based access controls around secret reads and key operations.
 - Migration tooling for database schema changes.
 - A real cloud provider integration behind the dynamic-lease interface, instead of simulated values.
-- Browser end-to-end coverage (Playwright) for the full seal, unseal, rotate and lease lifecycle.
+- Policy simulation for secret read approvals and denied access paths.
 
 ## License
 
