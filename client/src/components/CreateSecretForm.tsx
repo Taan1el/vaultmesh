@@ -38,7 +38,7 @@ export function CreateSecretForm({ disabled, onCreate }: CreateSecretFormProps) 
   return (
     <section className="panel" aria-labelledby="create-title">
       <div className="panel-heading">
-        <h2 id="create-title">Create encrypted secret</h2>
+        <h2 id="create-title">Create secret</h2>
       </div>
       <form onSubmit={(event) => void submit(event)}>
         <label>
@@ -102,10 +102,12 @@ export function CreateSecretForm({ disabled, onCreate }: CreateSecretFormProps) 
                 required
               />
             </label>
-            <small id="ttl-hint">Renewals can extend a lease up to 5 times this TTL.</small>
+            <small id="ttl-hint" className="field-help">
+              Renewals can extend a lease up to 5 times this TTL.
+            </small>
           </div>
         ) : null}
-        <button type="submit" disabled={disabled}>
+        <button type="submit" className="btn btn-primary" disabled={disabled}>
           Encrypt secret
         </button>
       </form>

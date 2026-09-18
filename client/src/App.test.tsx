@@ -361,13 +361,13 @@ describe('App', () => {
     await renderLoaded();
 
     const banner = screen.getByRole('complementary', { name: 'Demo mode' });
-    expect(banner).toHaveTextContent('Demo mode: data is simulated in your browser.');
+    expect(banner).toHaveTextContent('Demo: everything runs in your browser with sample data.');
     expect(within(banner).getByRole('link', { name: 'Source on GitHub' })).toHaveAttribute(
       'href',
       'https://github.com/Taan1el/vaultmesh'
     );
 
-    fireEvent.click(within(banner).getByRole('button', { name: 'Reset demo data' }));
+    fireEvent.click(within(banner).getByRole('button', { name: 'Reset sample data' }));
 
     expect(await screen.findByText('Demo data reset')).toBeInTheDocument();
     expect(mocks.resetDemoData).toHaveBeenCalledTimes(1);

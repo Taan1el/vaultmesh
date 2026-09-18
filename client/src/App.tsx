@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { RefreshCw } from 'lucide-react';
 import type {
   AuditEntry,
   AuditVerificationResult,
@@ -172,178 +173,210 @@ export function App() {
   const outdatedSecrets = state ? snapshot.secrets.filter((secret) => secret.kekVersion < state.activeKekVersion).length : 0;
 
   return (
-    <main className="shell">
+    <div className="app-shell">
       {isDemoMode ? <DemoBanner onReset={() => void resetDemo()} busy={busy} /> : null}
-      <section className="masthead" aria-labelledby="page-title">
-        <div>
-          <p className="eyebrow">VaultMesh</p>
-          <h1 id="page-title">Secrets operations console</h1>
-          <p className="lede">
-            Store envelope-encrypted secrets, walk through a custodian unseal, rotate and re-wrap keys, manage dynamic
-            leases and check the tamper-evident audit chain.
+
+      <header className="app-header">
+        <div className="header-inner">
+          <div>
+            <h1 className="brand-name">VaultMesh</h1>
+            <p className="brand-subtitle">
+              Envelope-encrypted secrets with custodian unseal, key rotation and dynamic leases.
+            </p>
+          </div>
+          <div className="header-actions">
+            <div className={`status-pill ${state ? state.status.toLowerCase() : 'loading'}`} role="status">
+              <span aria-hidden="true" />
+              {state ? state.status : 'Loading'}
+            </div>
+            <button type="button" className="btn btn-secondary" onClick={() => void seal()} disabled={busy || !state || sealed}>
+              Seal
+            </button>
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={() => void runAction(api.rotateKek, 'New KEK version created')}
+              disabled={busy || !state || sealed}
+            >
+              Rotate KEK
+            </button>
+          </div>
+        </div>
+        {sealed ? (
+          <p className="header-hint">Sealed: key operations stay disabled until the vault is unsealed.</p>
+        ) : null}
+      </header>
+
+      <main className="app-main">
+        {notice ? (
+          <p className={`notice ${notice.kind}`} role={notice.kind === 'error' ? 'alert' : 'status'}>
+            {notice.text}
           </p>
-        </div>
-        <div className={`status-pill ${state ? state.status.toLowerCase() : 'loading'}`} role="status">
-          <span aria-hidden="true" />
-          {state ? state.status : 'Loading'}
-        </div>
-      </section>
+        ) : null}
 
-      <section className="toolbar" aria-label="Vault actions">
-        <button type="button" onClick={() => void refresh()} disabled={busy}>
-          Refresh
-        </button>
-        <button type="button" onClick={() => void seal()} disabled={busy || !state || sealed}>
-          Seal
-        </button>
-        <button
-          type="button"
-          onClick={() => void runAction(api.rotateKek, 'New KEK version created')}
-          disabled={busy || !state || sealed}
-        >
-          Rotate KEK
-        </button>
-        <button type="button" onClick={() => void rewrapSecrets()} disabled={busy || !state || sealed}>
-          Re-wrap secrets{outdatedSecrets > 0 ? ` (${outdatedSecrets})` : ''}
-        </button>
-        {sealed ? <p className="hint toolbar-hint">Sealed: key operations stay disabled until the vault is unsealed.</p> : null}
-      </section>
-
-      {notice ? (
-        <p className={`notice ${notice.kind}`} role={notice.kind === 'error' ? 'alert' : 'status'}>
-          {notice.text}
-        </p>
-      ) : null}
-
-      <section className="metrics" aria-label="Vault metrics">
-        <article>
-          <span>{state?.totalSecrets ?? 0}</span>
-          <p>Total secrets</p>
-        </article>
-        <article>
-          <span>{staticSecrets}</span>
-          <p>Static secrets</p>
-        </article>
-        <article>
-          <span>{state?.activeLeases ?? 0}</span>
-          <p>Active leases</p>
-        </article>
-        <article>
-          <span>v{state?.activeKekVersion ?? 0}</span>
-          <p>Active KEK</p>
-        </article>
-      </section>
-
-      <div className="grid">
-        <section className="panel" aria-labelledby="secrets-title">
-          <div className="panel-heading">
-            <h2 id="secrets-title">Secret inventory</h2>
-            <span>{loading ? 'Loading' : countLabel(snapshot.secrets.length, 'path')}</span>
+        <section aria-labelledby="status-title">
+          <div className="section-heading-row">
+            <h2 id="status-title" className="section-heading">
+              Vault status
+            </h2>
+            <button type="button" className="btn-icon" onClick={() => void refresh()} disabled={busy}>
+              <RefreshCw size={16} aria-hidden="true" />
+              Refresh
+            </button>
           </div>
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th scope="col">Path</th>
-                  <th scope="col">KEK</th>
-                  <th scope="col">Ciphertext</th>
-                  <th scope="col">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {!loading && snapshot.secrets.length === 0 ? (
+          <div className="stats-strip">
+            <div className="stat-cell">
+              <span className="stat-label">Total secrets</span>
+              <span className="stat-value">{state?.totalSecrets ?? 0}</span>
+            </div>
+            <div className="stat-cell">
+              <span className="stat-label">Static secrets</span>
+              <span className="stat-value">{staticSecrets}</span>
+            </div>
+            <div className="stat-cell">
+              <span className="stat-label">Active leases</span>
+              <span className="stat-value">{state?.activeLeases ?? 0}</span>
+            </div>
+            <div className="stat-cell">
+              <span className="stat-label">Active KEK</span>
+              <span className="stat-value">v{state?.activeKekVersion ?? 0}</span>
+            </div>
+          </div>
+        </section>
+
+        <div className="grid">
+          <section className="panel" aria-labelledby="secrets-title">
+            <div className="panel-heading">
+              <h2 id="secrets-title">Secret inventory</h2>
+              <div className="panel-heading-meta">
+                <span>{loading ? 'Loading' : countLabel(snapshot.secrets.length, 'path')}</span>
+                <button
+                  type="button"
+                  className="btn-icon"
+                  onClick={() => void rewrapSecrets()}
+                  disabled={busy || !state || sealed}
+                >
+                  Re-wrap secrets{outdatedSecrets > 0 ? ` (${outdatedSecrets})` : ''}
+                </button>
+              </div>
+            </div>
+            <div className="table-wrap">
+              <table>
+                <thead>
                   <tr>
-                    <td colSpan={4} className="muted">
-                      No secrets stored yet.
-                    </td>
+                    <th scope="col">Path</th>
+                    <th scope="col">KEK</th>
+                    <th scope="col">Ciphertext</th>
+                    <th scope="col">Actions</th>
                   </tr>
-                ) : null}
-                {snapshot.secrets.map((secret) => (
-                  <tr key={secret.id}>
-                    <td>
-                      <strong>
-                        {secret.name}
-                        {secret.isDynamic ? <span className="tag">Dynamic</span> : null}
-                      </strong>
-                      <small>{secret.path}</small>
-                    </td>
-                    <td>
-                      v{secret.kekVersion}
-                      {state && secret.kekVersion < state.activeKekVersion ? <small>needs re-wrap</small> : null}
-                    </td>
-                    <td className="mono" title={`Updated ${formatDateTime(secret.updatedAt)}`}>
-                      {maskHex(secret.ciphertext)}
-                    </td>
-                    <td>
-                      <div className="button-row compact">
-                        <button
-                          type="button"
-                          className="small"
-                          onClick={(event) => void inspectSecret(secret.path, event.currentTarget)}
-                          disabled={sealed}
-                          aria-label={`Inspect ${secret.path}`}
-                        >
-                          Inspect
-                        </button>
-                        <button
-                          type="button"
-                          className="small secondary"
-                          onClick={() => void deleteSecret(secret)}
-                          disabled={busy || sealed}
-                          aria-label={`Delete ${secret.path}`}
-                        >
-                          Delete
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </section>
+                </thead>
+                <tbody>
+                  {!loading && snapshot.secrets.length === 0 ? (
+                    <tr>
+                      <td colSpan={4} className="muted">
+                        No secrets stored yet.
+                      </td>
+                    </tr>
+                  ) : null}
+                  {snapshot.secrets.map((secret) => (
+                    <tr key={secret.id}>
+                      <td>
+                        <strong>
+                          {secret.name}
+                          {secret.isDynamic ? <span className="tag">Dynamic</span> : null}
+                        </strong>
+                        <small>{secret.path}</small>
+                      </td>
+                      <td className="mono">
+                        v{secret.kekVersion}
+                        {state && secret.kekVersion < state.activeKekVersion ? <small>needs re-wrap</small> : null}
+                      </td>
+                      <td className="mono" title={`Updated ${formatDateTime(secret.updatedAt)}`}>
+                        {maskHex(secret.ciphertext)}
+                      </td>
+                      <td>
+                        <div className="button-row">
+                          <button
+                            type="button"
+                            className="btn btn-secondary"
+                            onClick={(event) => void inspectSecret(secret.path, event.currentTarget)}
+                            disabled={sealed}
+                            aria-label={`Inspect ${secret.path}`}
+                          >
+                            Inspect
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn-danger"
+                            onClick={() => void deleteSecret(secret)}
+                            disabled={busy || sealed}
+                            aria-label={`Delete ${secret.path}`}
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </section>
 
-        <CreateSecretForm disabled={busy || !state || sealed} onCreate={createSecret} />
+          <CreateSecretForm disabled={busy || !state || sealed} onCreate={createSecret} />
+        </div>
 
-        <UnsealPanel
-          state={state}
-          shares={snapshot.shares}
-          busy={busy}
-          onSubmit={submitShare}
-          onReset={() => void runAction(api.resetUnseal, 'Submitted shares cleared')}
-        />
+        <div className="grid">
+          <UnsealPanel
+            state={state}
+            shares={snapshot.shares}
+            busy={busy}
+            onSubmit={submitShare}
+            onReset={() => void runAction(api.resetUnseal, 'Submitted shares cleared')}
+          />
 
-        <LeaseList
-          leases={snapshot.leases}
-          disabled={busy || sealed}
-          onRenew={(lease) => void runAction(() => api.renewLease(lease.id, 30), `Lease for ${lease.secretPath} renewed`)}
-          onRevoke={(lease) => void runAction(() => api.revokeLease(lease.id), `Lease for ${lease.secretPath} revoked`)}
-        />
+          <LeaseList
+            leases={snapshot.leases}
+            disabled={busy || sealed}
+            onRenew={(lease) => void runAction(() => api.renewLease(lease.id, 30), `Lease for ${lease.secretPath} renewed`)}
+            onRevoke={(lease) => void runAction(() => api.revokeLease(lease.id), `Lease for ${lease.secretPath} revoked`)}
+          />
+        </div>
 
-        <section className="panel" aria-labelledby="keks-title">
-          <div className="panel-heading">
-            <h2 id="keks-title">Key versions</h2>
-            <span>{countLabel(snapshot.keks.length, 'version')}</span>
-          </div>
-          <ul className="stack-list">
-            {snapshot.keks.map((kek) => (
-              <li key={kek.version} className="list-item">
-                <div>
-                  <strong>KEK v{kek.version}</strong>
-                  <small>
-                    {countLabel(kek.secretsCount, 'secret')}, created {formatDateTime(kek.createdAt)}
-                  </small>
-                </div>
-                <span className={kek.isActive ? 'tag active' : 'tag'}>{kek.isActive ? 'Active' : 'Historical'}</span>
-              </li>
-            ))}
-          </ul>
-        </section>
+        <div className="grid">
+          <AuditLedger entries={snapshot.audit} verification={snapshot.auditVerification} />
 
-        <AuditLedger entries={snapshot.audit} verification={snapshot.auditVerification} />
-      </div>
+          <section className="panel" aria-labelledby="keks-title">
+            <div className="panel-heading">
+              <h2 id="keks-title">Key versions</h2>
+              <span className="muted">{countLabel(snapshot.keks.length, 'version')}</span>
+            </div>
+            <ul className="dense-list">
+              {snapshot.keks.map((kek) => (
+                <li key={kek.version} className="dense-row">
+                  <div className="dense-row-main">
+                    <strong>
+                      KEK v{kek.version} <span className={kek.isActive ? 'tag active' : 'tag'}>{kek.isActive ? 'Active' : 'Historical'}</span>
+                    </strong>
+                    <small>
+                      {countLabel(kek.secretsCount, 'secret')}, created {formatDateTime(kek.createdAt)}
+                    </small>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </section>
+        </div>
+      </main>
 
       {selectedSecret ? <SecretDrawer secret={selectedSecret} onClose={closeDrawer} /> : null}
-    </main>
+
+      <footer className="app-footer">
+        <div>VaultMesh &bull; MIT License</div>
+        <a href="https://github.com/Taan1el/vaultmesh" target="_blank" rel="noreferrer">
+          Source on GitHub
+        </a>
+      </footer>
+    </div>
   );
 }

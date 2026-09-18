@@ -19,25 +19,24 @@ export function AuditLedger({ entries, verification }: AuditLedgerProps) {
     <section className="panel" aria-labelledby="audit-title">
       <div className="panel-heading">
         <h2 id="audit-title">Audit ledger</h2>
-        <span className={broken ? 'danger-text' : undefined}>{verificationLabel(verification)}</span>
+        <span className={broken ? 'danger-text' : 'muted'}>{verificationLabel(verification)}</span>
       </div>
-      <p className="muted">
+      <p className="muted" style={{ marginBottom: '0.75rem' }}>
         Latest {countLabel(entries.length, 'entry', 'entries')}. Each hash covers the entry and the hash before it.
       </p>
-      <ul className="stack-list">
+      <ul className="dense-list">
         {entries.map((entry) => (
-          <li key={entry.id} className="list-item">
-            <div>
+          <li key={entry.id} className="dense-row">
+            <div className="dense-row-main">
               <strong>
                 {entry.action}
-                {entry.status !== 'SUCCESS' ? <span className="tag warn">{entry.status}</span> : null}
+                {entry.status !== 'SUCCESS' ? <span className="tag warn"> {entry.status}</span> : null}
               </strong>
-              <small>{entry.details}</small>
               <small>
-                {entry.actor} at {formatTime(entry.timestamp)}
+                {entry.details} &middot; {entry.actor} at {formatTime(entry.timestamp)}
               </small>
             </div>
-            <span className="mono hash" title={entry.entryHash}>
+            <span className="dense-row-value" title={entry.entryHash}>
               {maskHex(entry.entryHash)}
             </span>
           </li>

@@ -5,14 +5,18 @@ interface DemoBannerProps {
 
 export function DemoBanner({ onReset, busy }: DemoBannerProps) {
   return (
-    <aside className="demo-banner" aria-label="Demo mode">
-      <p>
-        Demo mode: data is simulated in your browser. Encryption uses the Web Crypto API and nothing is sent to a
-        server. <a href="https://github.com/Taan1el/vaultmesh">Source on GitHub</a>
-      </p>
-      <button type="button" className="small secondary" onClick={onReset} disabled={busy}>
-        Reset demo data
-      </button>
-    </aside>
+    <div className="demo-bar" role="complementary" aria-label="Demo mode">
+      <div className="demo-bar-inner">
+        <span>Demo: everything runs in your browser with sample data.</span>
+        <span className="demo-bar-links">
+          <button type="button" className="link-btn" onClick={onReset} disabled={busy}>
+            Reset sample data
+          </button>
+          <a href="https://github.com/Taan1el/vaultmesh" target="_blank" rel="noreferrer">
+            Source on GitHub
+          </a>
+        </span>
+      </div>
+    </div>
   );
 }

@@ -36,29 +36,29 @@ export function LeaseList({ leases, disabled, onRenew, onRevoke }: LeaseListProp
     <section className="panel" aria-labelledby="leases-title">
       <div className="panel-heading">
         <h2 id="leases-title">Dynamic leases</h2>
-        <span>{leases.filter((lease) => lease.status === 'ACTIVE').length} active</span>
+        <span className="muted">{leases.filter((lease) => lease.status === 'ACTIVE').length} active</span>
       </div>
-      <ul className="stack-list">
+      <ul className="dense-list">
         {leases.length === 0 ? <li className="muted">No leases have been issued.</li> : null}
         {leases.map((lease) => {
           const expired = lease.status === 'EXPIRED' || Date.parse(lease.expiresAt) <= now;
           const active = lease.status === 'ACTIVE' && !expired;
           const statusLabel = active ? 'Active' : lease.status === 'REVOKED' ? 'Revoked' : 'Expired';
           return (
-            <li key={lease.id} className="list-item">
-              <div>
+            <li key={lease.id} className="dense-row">
+              <div className="dense-row-main">
                 <strong>{lease.secretPath}</strong>
                 <small>
                   {describeLease(lease, now)}. Renewed {lease.renewCount} of {lease.maxRenewals} times.
                 </small>
               </div>
-              <div className="item-actions">
-                <span className={`tag ${active ? 'active' : ''}`}>{statusLabel}</span>
+              <div className="dense-row-actions">
+                <span className={active ? 'tag active' : 'tag'}>{statusLabel}</span>
                 {active ? (
-                  <div className="button-row compact">
+                  <div className="button-row">
                     <button
                       type="button"
-                      className="small"
+                      className="btn btn-secondary"
                       onClick={() => onRenew(lease)}
                       disabled={disabled || lease.renewCount >= lease.maxRenewals}
                       aria-label={`Renew lease for ${lease.secretPath}`}
@@ -67,7 +67,7 @@ export function LeaseList({ leases, disabled, onRenew, onRevoke }: LeaseListProp
                     </button>
                     <button
                       type="button"
-                      className="small secondary"
+                      className="btn btn-danger"
                       onClick={() => onRevoke(lease)}
                       disabled={disabled}
                       aria-label={`Revoke lease for ${lease.secretPath}`}
