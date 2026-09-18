@@ -12,9 +12,9 @@ The demo runs entirely in your browser: the same validation, Shamir, lease, audi
 
 ## Screenshot
 
-![Secrets operations console with the unsealed vault, secret inventory and metrics](docs/screenshots/01-dashboard.png)
+![VaultMesh dashboard with the unsealed vault, a stats strip and the secret inventory table](docs/screenshots/01-dashboard.png)
 
-More screenshots: [inspecting a decrypted secret](docs/screenshots/02-inspect-secret.png), [custodian unseal and dynamic leases](docs/screenshots/03-unseal-and-leases.png).
+More screenshots: [inspecting a decrypted secret](docs/screenshots/02-inspect-secret.png), [custodian unseal and dynamic leases](docs/screenshots/03-unseal-and-leases.png), [mobile layout](docs/screenshots/04-mobile.png).
 
 ## Features
 
@@ -23,7 +23,7 @@ More screenshots: [inspecting a decrypted secret](docs/screenshots/02-inspect-se
 - **Key rotation and re-wrap**: rotate to a new KEK, then re-wrap existing secrets' DEKs onto it without ever decrypting the stored payload.
 - **Dynamic leases**: a dynamic secret issues a time-limited lease on read, renewable up to 5 times and capped by a max TTL. Expired leases are swept automatically, and reading again issues a fresh lease.
 - **Tamper-evident audit ledger**: every action is chained with a SHA-256 hash over the entry before it, and a verification endpoint reports exactly where a chain breaks.
-- **React 19 dashboard**: live vault status, a secret inventory with a decrypt-and-inspect drawer, key version history, lease countdowns, and the audit ledger, polling every 5 seconds.
+- **React 19 dashboard**: a stats strip for the vault totals, a secret inventory table with a decrypt-and-inspect drawer, custodian unseal with a share checklist, key version history, lease countdowns, and the audit ledger, polling every 5 seconds.
 - **GitHub Pages demo mode**: no backend required; data is seeded and kept in your browser's localStorage, with a "Reset demo data" control.
 
 ## Getting started
