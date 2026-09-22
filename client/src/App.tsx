@@ -6,6 +6,7 @@ import type {
   CreateSecretDto,
   DecryptedSecret,
   KekVersionInfo,
+  ReadSecretOptions,
   SecretLease,
   StoredSecret,
   VaultState,
@@ -21,6 +22,7 @@ import { countLabel, errorMessage, formatDateTime, maskHex } from './components/
 
 const REFRESH_INTERVAL_MS = 5000;
 const AUDIT_ENTRIES_SHOWN = 8;
+const DEFAULT_POLICY_PURPOSE = 'Incident follow-up';
 
 interface Snapshot {
   state: VaultState | null;
@@ -50,6 +52,7 @@ export function App() {
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<Notice>(null);
   const [selectedSecret, setSelectedSecret] = useState<DecryptedSecret | null>(null);
+  const [policyReview, setPolicyReview] = useState({ enabled: false, purpose: DEFAULT_POLICY_PURPOSE, approvalCode: '' });
   const latestRefresh = useRef(0);
   const lastRefreshFailed = useRef(false);
   const drawerTrigger = useRef<HTMLElement | null>(null);
@@ -116,7 +119,10 @@ export function App() {
   async function inspectSecret(path: string, trigger: HTMLElement) {
     setNotice(null);
     try {
-      const secret = await api.readSecret(path);
+      const options: ReadSecretOptions | undefined = policyReview.enabled
+        ? { purpose: policyReview.purpose, approvalCode: policyReview.approvalCode }
+        : undefined;
+      const secret = await api.readSecret(path, options);
       drawerTrigger.current = trigger;
       setSelectedSecret(secret);
     } catch (error) {
@@ -325,6 +331,43 @@ export function App() {
 
           <CreateSecretForm disabled={busy || !state || sealed} onCreate={createSecret} />
         </div>
+
+        <section className="panel access-panel" aria-labelledby="access-policy-title">
+          <div className="panel-heading">
+            <h2 id="access-policy-title">Read access review</h2>
+            <span className="muted">{policyReview.enabled ? 'Enabled' : 'Bypass'}</span>
+          </div>
+          <label className="check">
+            <input
+              type="checkbox"
+              checked={policyReview.enabled}
+              onChange={(event) => setPolicyReview((value) => ({ ...value, enabled: event.target.checked }))}
+            />
+            Simulate approval policy on inspect
+          </label>
+          <div className="field">
+            <label htmlFor="read-purpose">Purpose</label>
+            <input
+              id="read-purpose"
+              value={policyReview.purpose}
+              onChange={(event) => setPolicyReview((value) => ({ ...value, purpose: event.target.value }))}
+              disabled={!policyReview.enabled}
+              maxLength={120}
+            />
+          </div>
+          <div className="field">
+            <label htmlFor="approval-code">Approval code</label>
+            <input
+              id="approval-code"
+              value={policyReview.approvalCode}
+              onChange={(event) => setPolicyReview((value) => ({ ...value, approvalCode: event.target.value }))}
+              disabled={!policyReview.enabled}
+              maxLength={40}
+              placeholder="VM-APPROVED"
+            />
+          </div>
+          <p className="hint">Sensitive sample paths require the approval code when this simulation is enabled.</p>
+        </section>
 
         <div className="grid">
           <UnsealPanel

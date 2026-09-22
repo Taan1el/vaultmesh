@@ -153,6 +153,12 @@ function createFakeApi() {
         kekVersion: 1,
         plaintext: '{"token":"example-token-not-real"}',
         parsedData: { token: 'example-token-not-real' },
+        access: {
+          status: 'ALLOWED',
+          reason: 'No approval gate matched this path',
+          purpose: 'Direct operator read',
+          approvalCodeRequired: false,
+        },
         version: 1,
         isDynamic: false,
         createdAt: iso(-60_000),
@@ -221,13 +227,29 @@ describe('App', () => {
 
     const dialog = await screen.findByRole('dialog', { name: 'Test API key' });
     expect(within(dialog).getByText(/"token": "example-token-not-real"/)).toBeInTheDocument();
+    expect(within(dialog).getByText(/Access: No approval gate matched this path/)).toBeInTheDocument();
     expect(within(dialog).getByRole('button', { name: 'Close' })).toHaveFocus();
-    expect(fake.api.readSecret).toHaveBeenCalledWith('secret/test/api');
+    expect(fake.api.readSecret).toHaveBeenCalledWith('secret/test/api', undefined);
 
     fireEvent.keyDown(document, { key: 'Escape' });
 
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
     expect(inspect).toHaveFocus();
+  });
+
+  it('passes purpose and approval code when read access review is enabled', async () => {
+    await renderLoaded();
+
+    fireEvent.click(screen.getByLabelText('Simulate approval policy on inspect'));
+    fireEvent.change(screen.getByLabelText('Purpose'), { target: { value: 'Customer incident review' } });
+    fireEvent.change(screen.getByLabelText('Approval code'), { target: { value: 'VM-APPROVED' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Inspect secret/test/api' }));
+
+    await screen.findByRole('dialog', { name: 'Test API key' });
+    expect(fake.api.readSecret).toHaveBeenCalledWith('secret/test/api', {
+      purpose: 'Customer incident review',
+      approvalCode: 'VM-APPROVED',
+    });
   });
 
   it('creates a secret, confirms it and clears the form', async () => {

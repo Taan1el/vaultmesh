@@ -4,6 +4,7 @@ import type {
   CreateSecretDto,
   DecryptedSecret,
   KekVersionInfo,
+  ReadSecretOptions,
   SecretLease,
   StoredSecret,
   UnsealProgress,
@@ -22,7 +23,7 @@ export interface VaultApi {
   rewrapSecrets(): Promise<{ rewrappedCount: number; activeVersion: number }>;
   keks(): Promise<KekVersionInfo[]>;
   secrets(): Promise<StoredSecret[]>;
-  readSecret(path: string): Promise<DecryptedSecret>;
+  readSecret(path: string, options?: ReadSecretOptions): Promise<DecryptedSecret>;
   createSecret(dto: CreateSecretDto): Promise<StoredSecret>;
   deleteSecret(path: string): Promise<{ message: string; path: string }>;
   leases(): Promise<SecretLease[]>;
@@ -66,6 +67,14 @@ export function secretUrl(path: string): string {
   return `/api/secrets/${path.split('/').map(encodeURIComponent).join('/')}`;
 }
 
+function readSecretUrl(path: string, options: ReadSecretOptions = {}): string {
+  const params = new URLSearchParams();
+  if (options.purpose) params.set('purpose', options.purpose);
+  if (options.approvalCode) params.set('approvalCode', options.approvalCode);
+  const query = params.toString();
+  return `${secretUrl(path)}${query ? `?${query}` : ''}`;
+}
+
 export const httpApi: VaultApi = {
   status: () => request('/api/vault/status'),
   demoShares: () => request('/api/vault/demo-shares'),
@@ -76,7 +85,7 @@ export const httpApi: VaultApi = {
   rewrapSecrets: () => post('/api/vault/keks/rewrap'),
   keks: () => request('/api/vault/keks'),
   secrets: () => request('/api/secrets'),
-  readSecret: (path) => request(secretUrl(path)),
+  readSecret: (path, options) => request(readSecretUrl(path, options)),
   createSecret: (dto) => post('/api/secrets', dto),
   deleteSecret: (path) => request(secretUrl(path), { method: 'DELETE' }),
   leases: () => request('/api/leases'),

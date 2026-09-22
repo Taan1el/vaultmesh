@@ -8,9 +8,10 @@ function escapeRegExp(value: string): string {
 
 test('operates the vault lifecycle from the dashboard', async ({ page, request }) => {
   await page.goto('/');
+  const vaultStatus = page.locator('.status-pill');
 
-  await expect(page.getByRole('heading', { name: 'Secrets operations console' })).toBeVisible();
-  await expect(page.getByRole('status')).toContainText('UNSEALED');
+  await expect(page.getByRole('heading', { name: 'VaultMesh' })).toBeVisible();
+  await expect(vaultStatus).toContainText('UNSEALED');
   await expect(page.getByText('Audit ledger')).toBeVisible();
 
   await page
@@ -35,7 +36,7 @@ test('operates the vault lifecycle from the dashboard', async ({ page, request }
   await expect(createdSecretRow).toContainText(pathValue);
 
   await page.getByRole('button', { name: 'Seal' }).click();
-  await expect(page.getByRole('status')).toContainText('SEALED');
+  await expect(vaultStatus).toContainText('SEALED');
   await expect(createdSecretRow.getByRole('button', { name: 'Inspect' })).toBeDisabled();
 
   const sealedRead = await request.get(`/api/secrets/${pathValue}`);
@@ -47,12 +48,17 @@ test('operates the vault lifecycle from the dashboard', async ({ page, request }
   const { shares } = (await shareResponse.json()) as { shares: string[] };
   expect(shares).toHaveLength(5);
 
-  for (const share of shares.slice(0, 3)) {
-    await page.getByLabel('Custodian share').fill(share);
-    await page.getByRole('button', { name: 'Submit share' }).click();
+  const shareInput = page.getByLabel('Custodian share');
+  const submitShare = page.getByRole('button', { name: 'Submit share' });
+  const clearShares = page.getByRole('button', { name: 'Clear submitted shares' });
+  for (const [index, share] of shares.slice(0, 3).entries()) {
+    if (index > 0) await expect(clearShares).toBeEnabled();
+    await shareInput.fill(share);
+    await expect(submitShare).toBeEnabled();
+    await submitShare.click();
   }
 
-  await expect(page.getByRole('status')).toContainText('UNSEALED');
+  await expect(vaultStatus).toContainText('UNSEALED');
 
   await createdSecretRow.getByRole('button', { name: 'Inspect' }).click();
   await expect(page.getByRole('dialog')).toContainText('reports:read');

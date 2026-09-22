@@ -14,13 +14,15 @@ import {
   AuditEntry,
   AuditAction,
   AuditVerificationResult,
+  ReadSecretOptions,
 } from '../../../shared/types.js';
-import { badRequest, conflict, notFound, vaultSealed, VaultError } from '../../../shared/errors.js';
+import { badRequest, conflict, forbidden, notFound, vaultSealed, VaultError } from '../../../shared/errors.js';
 import { parseCreateSecretInput, parseRenewIncrement, parseSecretPath } from '../../../shared/validation.js';
 import { formatShare, type SharePoint } from '../../../shared/shamir.js';
 import { assertLeaseRevocable, LEASE_MAX_RENEWALS, planLeaseRenewal } from '../../../shared/leases.js';
 import { auditChainInputs, checkAuditChain, GENESIS_HASH } from '../../../shared/audit.js';
 import { SAMPLE_SECRETS } from '../../../shared/seed.js';
+import { evaluateReadPolicy } from '../../../shared/accessPolicy.js';
 
 const UNSEAL_THRESHOLD = 3;
 const TOTAL_SHARES = 5;
@@ -457,7 +459,7 @@ export class VaultService {
     };
   }
 
-  readSecret(pathOrId: string, actor = 'developer', ip = '127.0.0.1'): DecryptedSecret {
+  readSecret(pathOrId: string, actor = 'developer', ip = '127.0.0.1', options: ReadSecretOptions = {}): DecryptedSecret {
     const cleanQuery = parseSecretPath(pathOrId);
     this.assertUnsealed();
     const rawDb = this.db.getDb();
@@ -476,6 +478,19 @@ export class VaultService {
         details: `Secret not found at path: ${cleanQuery}`,
       });
       throw notFound(`Secret not found at path "${cleanQuery}"`);
+    }
+
+    const access = evaluateReadPolicy(row.path, options);
+    if (access.status !== 'ALLOWED') {
+      this.recordAudit({
+        action: 'SECRET_READ',
+        secretPath: row.path,
+        actor,
+        ip,
+        status: 'DENIED',
+        details: `Read denied by policy. Purpose: ${access.purpose}. ${access.reason}`,
+      });
+      throw forbidden(access.reason);
     }
 
     const kek = this.inMemoryKeks.get(row.kek_version);
@@ -522,7 +537,7 @@ export class VaultService {
       actor,
       ip,
       status: 'SUCCESS',
-      details: `Read and decrypted secret with KEK v${row.kek_version}`,
+      details: `Read and decrypted secret with KEK v${row.kek_version}. Purpose: ${access.purpose}`,
     });
     if (lease && issuedLease) this.auditLeaseIssued(lease, actor, ip);
 
@@ -534,6 +549,7 @@ export class VaultService {
       kekVersion: row.kek_version,
       plaintext,
       parsedData,
+      access,
       version: row.version,
       isDynamic: Boolean(row.is_dynamic),
       lease,

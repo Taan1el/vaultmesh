@@ -14,7 +14,7 @@ The demo runs entirely in your browser: the same validation, Shamir, lease, audi
 
 ![VaultMesh dashboard with the unsealed vault, a stats strip and the secret inventory table](docs/screenshots/01-dashboard.png)
 
-More screenshots: [inspecting a decrypted secret](docs/screenshots/02-inspect-secret.png), [custodian unseal and dynamic leases](docs/screenshots/03-unseal-and-leases.png), [mobile layout](docs/screenshots/04-mobile.png).
+More screenshots: [inspecting a decrypted secret](docs/screenshots/02-inspect-secret.png), [custodian unseal and dynamic leases](docs/screenshots/03-unseal-and-leases.png), [mobile layout](docs/screenshots/04-mobile.png), [browser workflow with access review](docs/screenshots/04-browser-workflow.png).
 
 ## Features
 
@@ -22,6 +22,7 @@ More screenshots: [inspecting a decrypted secret](docs/screenshots/02-inspect-se
 - **Envelope encryption**: every secret gets a single-use AES-256-GCM data-encryption key (DEK), which is itself wrapped by the active key-encryption key (KEK).
 - **Key rotation and re-wrap**: rotate to a new KEK, then re-wrap existing secrets' DEKs onto it without ever decrypting the stored payload.
 - **Dynamic leases**: a dynamic secret issues a time-limited lease on read, renewable up to 5 times and capped by a max TTL. Expired leases are swept automatically, and reading again issues a fresh lease.
+- **Read access review**: inspect actions can run through an approval-policy simulation. Sensitive sample paths require a purpose plus the demo approval code before plaintext is returned, and denied reads are written to the audit ledger.
 - **Tamper-evident audit ledger**: every action is chained with a SHA-256 hash over the entry before it, and a verification endpoint reports exactly where a chain breaks.
 - **React 19 dashboard**: a stats strip for the vault totals, a secret inventory table with a decrypt-and-inspect drawer, custodian unseal with a share checklist, key version history, lease countdowns, and the audit ledger, polling every 5 seconds.
 - **GitHub Pages demo mode**: no backend required; data is seeded and kept in your browser's localStorage, with a "Reset demo data" control.
@@ -151,7 +152,7 @@ All routes are mounted under `/api` except `/health`. Responses are the JSON sha
 | POST | `/api/vault/keks/rewrap` | - | `{ rewrappedCount, activeVersion }` | 503 sealed |
 | GET | `/api/secrets` | - | `StoredSecret[]` | - |
 | POST | `/api/secrets` | `CreateSecretDto` | `StoredSecret` (201) | 400 invalid field, 409 path exists, 503 sealed |
-| GET | `/api/secrets/:path` | - | `DecryptedSecret` | 404 not found, 503 sealed |
+| GET | `/api/secrets/:path` | query `purpose?`, `approvalCode?` | `DecryptedSecret` with access decision | 403 approval required, 404 not found, 503 sealed |
 | DELETE | `/api/secrets/:path` | - | `{ message, path }` | 404 not found, 503 sealed |
 | GET | `/api/leases` | - | `SecretLease[]` | - |
 | POST | `/api/leases/:id/renew` | `{ incrementSeconds? }` | `SecretLease` | 400 invalid increment, 404 not found, 409 cannot renew, 503 sealed |
@@ -165,7 +166,7 @@ Shapes (`VaultState`, `StoredSecret`, `DecryptedSecret`, `SecretLease`, `KekVers
 
 - **Vault core** (`server/test`): Shamir share validation and threshold reconstruction, envelope encryption round-trips, secret and lease and audit input validation, the audit hash chain and tamper detection, lease issue/renew/revoke/expiry limits, seal state across a restart, and the no-CORS/JSON-only/loopback hardening.
 - **API** (`server/test/api-errors.test.ts`, `api-validation.test.ts`): the JSON error shape, unknown routes returning a 404, malformed and oversized request bodies, and that error responses never leak internal detail.
-- **Client** (`client/src/App.test.tsx`, React Testing Library): the unseal flow, secret inventory and inspect drawer, lease countdowns and actions, the audit ledger, and singular/plural count labels.
+- **Client** (`client/src/App.test.tsx`, React Testing Library): the unseal flow, secret inventory, read access review controls, inspect drawer, lease countdowns and actions, the audit ledger, and singular/plural count labels.
 - **Demo adapter** (`client/src/services/demoApi.test.ts`, `demoCrypto.test.ts`, `api.test.ts`): the in-browser vault against the same `VaultApi` interface as the real API, Web Crypto envelope encryption round-trips, and the real-vs-demo switch.
 - **Browser workflow** (`tests/e2e/vault-workflow.spec.ts`, Playwright): the real dashboard plus API path for inspect, create dynamic secret, seal, failed read while sealed, three-share unseal, read after unseal, KEK rotate and re-wrap.
 
@@ -196,7 +197,7 @@ Serves the built dashboard and API together at **http://localhost:4005**. Compos
 - Role-based access controls around secret reads and key operations.
 - Migration tooling for database schema changes.
 - A real cloud provider integration behind the dynamic-lease interface, instead of simulated values.
-- Policy simulation for secret read approvals and denied access paths.
+- Persistent approval requests with expiry and reviewer attribution.
 
 ## License
 

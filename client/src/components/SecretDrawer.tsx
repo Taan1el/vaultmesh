@@ -34,6 +34,9 @@ export function SecretDrawer({ secret, onClose }: SecretDrawerProps) {
           Lease {secret.lease.id} expires {formatDateTime(secret.lease.expiresAt)}.
         </p>
       ) : null}
+      <p className="muted">
+        Access: {secret.access.reason}. Purpose: {secret.access.purpose}.
+      </p>
       <div className="drawer-footer">
         <button ref={closeRef} type="button" className="btn btn-secondary" onClick={onClose}>
           Close

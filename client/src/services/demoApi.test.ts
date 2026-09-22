@@ -90,6 +90,24 @@ describe('demo API', () => {
     ]);
   });
 
+  it('denies sensitive reads without approval when a purpose is supplied', async () => {
+    const api = createDemoApi(() => memoryStorage());
+
+    await expectVaultError(
+      api.readSecret('secret/production/database', { purpose: 'Incident follow-up' }),
+      403,
+      /approval code/
+    );
+    const approved = await api.readSecret('secret/production/database', {
+      purpose: 'Incident follow-up',
+      approvalCode: 'VM-APPROVED',
+    });
+
+    expect(approved.access).toMatchObject({ status: 'ALLOWED', approvalCodeRequired: true });
+    const audit = await api.audit(2);
+    expect(audit.map((entry) => `${entry.action}:${entry.status}`)).toEqual(['SECRET_READ:SUCCESS', 'SECRET_READ:DENIED']);
+  });
+
   it('rejects invalid input with the same messages as the API', async () => {
     const { api } = setup();
     await expectVaultError(api.createSecret({ path: '///', name: 'x', plaintext: 'y' }), 400, /path must not be empty/);

@@ -77,6 +77,7 @@ export interface DecryptedSecret {
   kekVersion: number;
   plaintext: string;
   parsedData?: Record<string, any>;
+  access: SecretAccessDecision;
   version: number;
   isDynamic: boolean;
   lease?: SecretLease;
@@ -92,6 +93,18 @@ export interface CreateSecretDto {
   isDynamic?: boolean;
   ttlSeconds?: number;
   maxTtlSeconds?: number;
+}
+
+export interface ReadSecretOptions {
+  purpose?: string;
+  approvalCode?: string;
+}
+
+export interface SecretAccessDecision {
+  status: 'ALLOWED' | 'APPROVAL_REQUIRED';
+  reason: string;
+  purpose: string;
+  approvalCodeRequired: boolean;
 }
 
 export interface KekVersionInfo {

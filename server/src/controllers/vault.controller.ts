@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import { VaultService } from '../services/vault.service.js';
 import { badRequest } from '../../../shared/errors.js';
-import { parseAuditLimit, sanitizeActor } from '../../../shared/validation.js';
+import { parseAuditLimit, parseReadSecretOptions, sanitizeActor } from '../../../shared/validation.js';
 import type { CreateSecretDto } from '../../../shared/types.js';
 
 // Handlers are synchronous, so Express passes any thrown error to the JSON
@@ -61,7 +61,7 @@ export class VaultController {
   readSecret = (req: Request, res: Response): void => {
     const rawPath = this.getWildcardPath(req);
     if (!rawPath) throw badRequest('Path parameter is required');
-    res.json(this.vaultService.readSecret(rawPath, this.actor(req, 'developer'), this.ip(req)));
+    res.json(this.vaultService.readSecret(rawPath, this.actor(req, 'developer'), this.ip(req), parseReadSecretOptions(req.query)));
   };
 
   deleteSecret = (req: Request, res: Response): void => {

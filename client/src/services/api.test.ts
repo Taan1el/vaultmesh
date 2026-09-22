@@ -63,6 +63,18 @@ describe('httpApi', () => {
     expect(fetchMock).toHaveBeenCalledWith('/api/secrets/secret/x', { method: 'DELETE' });
   });
 
+  it('adds read policy parameters to secret reads', async () => {
+    const fetchMock = mockFetch({ ok: true, status: 200, body: {} });
+    await httpApi.readSecret('secret/production/database', {
+      purpose: 'Incident follow-up',
+      approvalCode: 'VM-APPROVED',
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/secrets/secret/production/database?purpose=Incident+follow-up&approvalCode=VM-APPROVED',
+      undefined
+    );
+  });
+
   it('asks for a limited number of audit entries', async () => {
     const fetchMock = mockFetch({ ok: true, status: 200, body: [] });
     await httpApi.audit();

@@ -45,6 +45,24 @@ describe('API input validation', () => {
     expect(res.status).toBe(400);
   });
 
+  it('enforces sensitive-read approval when a purpose is supplied', async () => {
+    const denied = await t.request.get('/api/secrets/secret/production/database?purpose=Incident%20follow-up');
+    expect(denied.status).toBe(403);
+    expect(denied.body.error).toMatch(/approval code/);
+
+    const approved = await t.request.get(
+      '/api/secrets/secret/production/database?purpose=Incident%20follow-up&approvalCode=VM-APPROVED'
+    );
+    expect(approved.status).toBe(200);
+    expect(approved.body.access).toMatchObject({ status: 'ALLOWED', approvalCodeRequired: true });
+
+    const audit = await t.request.get('/api/audit?limit=2');
+    expect(audit.body.map((entry: { action: string; status: string }) => `${entry.action}:${entry.status}`)).toEqual([
+      'SECRET_READ:SUCCESS',
+      'SECRET_READ:DENIED',
+    ]);
+  });
+
   it('rejects invalid lease renewal increments', async () => {
     const leases = await t.request.get('/api/leases');
     const leaseId = leases.body[0].id;

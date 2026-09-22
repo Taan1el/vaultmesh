@@ -8,13 +8,14 @@ import type {
   CreateSecretDto,
   DecryptedSecret,
   KekVersionInfo,
+  ReadSecretOptions,
   SecretLease,
   StoredSecret,
   UnsealProgress,
   VaultState,
   VaultStatus,
 } from '../../../shared/types';
-import { badRequest, conflict, notFound, vaultSealed, VaultError } from '../../../shared/errors';
+import { badRequest, conflict, forbidden, notFound, vaultSealed, VaultError } from '../../../shared/errors';
 import {
   parseAuditLimit,
   parseCreateSecretInput,
@@ -26,6 +27,7 @@ import { assertLeaseRevocable, LEASE_MAX_RENEWALS, planLeaseRenewal } from '../.
 import { auditChainInputs, auditHashInput, checkAuditChain, GENESIS_HASH } from '../../../shared/audit';
 import { bytesToHex } from '../../../shared/encoding';
 import { SAMPLE_SECRETS } from '../../../shared/seed';
+import { evaluateReadPolicy } from '../../../shared/accessPolicy';
 import type { VaultApi } from './api';
 import {
   KEY_BYTES,
@@ -537,7 +539,7 @@ export function createDemoApi(storageFactory: () => StorageLike = browserStorage
         [...v.secrets].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0)).map((s) => ({ ...s }))
       ),
 
-    readSecret: (path) =>
+    readSecret: (path, options?: ReadSecretOptions) =>
       run(
         async (v): Promise<DecryptedSecret> => {
           const query = parseSecretPath(path);
@@ -553,6 +555,18 @@ export function createDemoApi(storageFactory: () => StorageLike = browserStorage
             });
             save(v);
             throw notFound(`Secret not found at path "${query}"`);
+          }
+          const access = evaluateReadPolicy(secret.path, options);
+          if (access.status !== 'ALLOWED') {
+            await recordAudit(v, {
+              action: 'SECRET_READ',
+              actor: 'developer',
+              status: 'DENIED',
+              secretPath: secret.path,
+              details: `Read denied by policy. Purpose: ${access.purpose}. ${access.reason}`,
+            });
+            save(v);
+            throw forbidden(access.reason);
           }
           const kek = keks.get(secret.kekVersion);
           if (!kek) throw new VaultError(500, `KEK v${secret.kekVersion} is not loaded`);
@@ -583,7 +597,7 @@ export function createDemoApi(storageFactory: () => StorageLike = browserStorage
             action: 'SECRET_READ',
             actor: 'developer',
             secretPath: secret.path,
-            details: `Read and decrypted secret with KEK v${secret.kekVersion}`,
+            details: `Read and decrypted secret with KEK v${secret.kekVersion}. Purpose: ${access.purpose}`,
           });
           if (lease && issued) await auditLeaseIssued(v, lease, 'developer');
 
@@ -595,6 +609,7 @@ export function createDemoApi(storageFactory: () => StorageLike = browserStorage
             kekVersion: secret.kekVersion,
             plaintext,
             ...(parsedData !== undefined ? { parsedData } : {}),
+            access,
             version: secret.version,
             isDynamic: secret.isDynamic,
             ...(lease ? { lease: { ...lease } } : {}),

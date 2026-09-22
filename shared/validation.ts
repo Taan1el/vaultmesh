@@ -1,4 +1,5 @@
 import { badRequest } from './errors.js';
+import type { ReadSecretOptions } from './types.js';
 
 export const SECRET_PATH_MAX_LENGTH = 200;
 export const SECRET_NAME_MAX_LENGTH = 100;
@@ -13,6 +14,8 @@ export const MAX_RENEW_INCREMENT_SECONDS = 60 * 60;
 export const DEFAULT_AUDIT_LIMIT = 50;
 export const MAX_AUDIT_LIMIT = 200;
 export const ACTOR_MAX_LENGTH = 64;
+export const READ_PURPOSE_MAX_LENGTH = 120;
+export const APPROVAL_CODE_MAX_LENGTH = 40;
 
 const PATH_SEGMENT = /^[A-Za-z0-9_][A-Za-z0-9_.-]*$/;
 
@@ -129,6 +132,15 @@ export function parseAuditLimit(value: unknown): number {
     throw badRequest(`limit must be a whole number between 1 and ${MAX_AUDIT_LIMIT}`);
   }
   return limit;
+}
+
+export function parseReadSecretOptions(query: { purpose?: unknown; approvalCode?: unknown }): ReadSecretOptions {
+  const purpose = parseText(query.purpose, 'purpose', READ_PURPOSE_MAX_LENGTH, false);
+  const approvalCode = parseText(query.approvalCode, 'approvalCode', APPROVAL_CODE_MAX_LENGTH, false);
+  return {
+    ...(purpose ? { purpose } : {}),
+    ...(approvalCode ? { approvalCode } : {}),
+  };
 }
 
 /** Actor names come from a self-reported header, so keep them short and printable. */
