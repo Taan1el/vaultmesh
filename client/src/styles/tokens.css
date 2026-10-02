@@ -1,20 +1,23 @@
 :root {
-  --paper: #faf9f6;        /* page background */
-  --surface: #ffffff;      /* panels, tables */
-  --ink: #17160f;          /* primary text */
-  --ink-2: #57544b;        /* secondary text */
-  --ink-3: #8a867b;        /* tertiary text, placeholders */
-  --rule: #e3e0d7;         /* borders and dividers */
-  --rule-strong: #cfcabd;  /* input borders, table header rule */
+  --paper: #eef0ea;        /* page background: sage stone */
+  --surface: #f9faf7;      /* panels, tables */
+  --ink: #16201a;          /* primary text, rail, panel top rules */
+  --ink-2: #435048;        /* secondary text */
+  --ink-3: #596860;        /* tertiary text, placeholders */
+  --rule: #d2d8cd;         /* hairlines and dividers */
+  --rule-strong: #7f8c83;  /* input borders, table header rule */
   --accent: #1d5c45;       /* vaultmesh: vault green */
-  --accent-ink: #ffffff;   /* text on accent fills */
-  --accent-soft: color-mix(in srgb, var(--accent) 10%, var(--surface));
-  /* status colors are data, not decoration: use only for status text, dots, small badges and meter fills */
-  --ok: #1f7a4d;
-  --warn: #a15c00;
-  --bad: #b3261e;
-  --radius: 6px;
-  --font-heading: "Sora Variable", "Sora", ui-sans-serif, system-ui, sans-serif;
-  --font-body: "Geist Variable", "Geist", ui-sans-serif, system-ui, sans-serif;
-  --font-mono: "Geist Mono Variable", "Geist Mono", ui-monospace, "SFMono-Regular", monospace;
+  --accent-ink: #f9faf7;   /* text on accent fills */
+  /* status colors are data, not decoration: status text, dots and meter fills only */
+  --ok: #1d6a43;
+  --warn: #8a5200;
+  --bad: #a8281f;
+  --rail-ink: #eef0ea;     /* text on the ink rail */
+  --rail-ink-2: #b4c0b8;   /* secondary text on the ink rail */
+  --rail-rule: #33423a;    /* dividers on the ink rail */
+  --radius: 2px;
+  --rail-width: 15.5rem;
+  --font-heading: "Fraunces Variable", "Fraunces", Georgia, serif;
+  --font-body: "Public Sans Variable", "Public Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Source Code Pro Variable", "Source Code Pro", ui-monospace, "SFMono-Regular", monospace;
 }

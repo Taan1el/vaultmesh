@@ -1,8 +1,8 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
-import '@fontsource-variable/sora';
-import '@fontsource-variable/geist';
-import '@fontsource-variable/geist-mono';
+import '@fontsource-variable/fraunces';
+import '@fontsource-variable/public-sans';
+import '@fontsource-variable/source-code-pro';
 import './styles/tokens.css';
 import { App } from './App';
 import './styles.css';
