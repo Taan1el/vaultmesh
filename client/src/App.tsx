@@ -275,7 +275,7 @@ export function App() {
               <div className="split wide-left">
                 <section className="panel" aria-labelledby="status-title">
                   <div className="panel-heading">
-                    <h2 id="status-title">Vault status</h2>
+                    <h3 id="status-title">Vault status</h3>
                   </div>
                   <dl className="ledger">
                     <div className="ledger-row">
@@ -311,7 +311,7 @@ export function App() {
             <div className="section">
               <section className="panel" aria-labelledby="secrets-title">
                 <div className="panel-heading">
-                  <h2 id="secrets-title">Secret inventory</h2>
+                  <h3 id="secrets-title">Secret inventory</h3>
                   <div className="panel-heading-meta">
                     <span>{loading ? 'Loading' : countLabel(snapshot.secrets.length, 'path')}</span>
                   </div>
@@ -390,7 +390,7 @@ export function App() {
 
                 <section className="panel access-panel" aria-labelledby="access-policy-title">
                   <div className="panel-heading">
-                    <h2 id="access-policy-title">Read access review</h2>
+                    <h3 id="access-policy-title">Read access review</h3>
                     <span className="muted">{policyReview.enabled ? 'Enabled' : 'Bypass'}</span>
                   </div>
                   <form onSubmit={(event) => event.preventDefault()}>
@@ -434,7 +434,7 @@ export function App() {
             <div className="section">
               <section className="panel" aria-labelledby="keks-title">
                 <div className="panel-heading">
-                  <h2 id="keks-title">Key versions</h2>
+                  <h3 id="keks-title">Key versions</h3>
                   <div className="panel-heading-meta">
                     <span>{countLabel(snapshot.keks.length, 'version')}</span>
                     <button

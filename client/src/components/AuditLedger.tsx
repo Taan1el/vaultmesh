@@ -18,7 +18,7 @@ export function AuditLedger({ entries, verification }: AuditLedgerProps) {
   return (
     <section className="panel" aria-labelledby="audit-title">
       <div className="panel-heading">
-        <h2 id="audit-title">Audit ledger</h2>
+        <h3 id="audit-title">Audit ledger</h3>
         <span className={broken ? 'danger-text' : 'muted'}>{verificationLabel(verification)}</span>
       </div>
       <p className="panel-note">

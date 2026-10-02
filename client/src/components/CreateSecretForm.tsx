@@ -38,7 +38,7 @@ export function CreateSecretForm({ disabled, onCreate }: CreateSecretFormProps) 
   return (
     <section className="panel" aria-labelledby="create-title">
       <div className="panel-heading">
-        <h2 id="create-title">Create secret</h2>
+        <h3 id="create-title">Create secret</h3>
       </div>
       <form onSubmit={(event) => void submit(event)}>
         <label>

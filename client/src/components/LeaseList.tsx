@@ -35,7 +35,7 @@ export function LeaseList({ leases, disabled, onRenew, onRevoke }: LeaseListProp
   return (
     <section className="panel" aria-labelledby="leases-title">
       <div className="panel-heading">
-        <h2 id="leases-title">Dynamic leases</h2>
+        <h3 id="leases-title">Dynamic leases</h3>
         <span className="muted">{leases.filter((lease) => lease.status === 'ACTIVE').length} active</span>
       </div>
       <div className="table-wrap">

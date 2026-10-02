@@ -7,7 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Changed
-- Redesigned the dashboard on the shared design tokens: self-hosted Sora, Geist and Geist Mono replace Inter and the system monospace stack, every panel and table lost its drop shadow, and the page runs on one accent color instead of fourteen text colors. The four vault totals are now one stats strip instead of four separate tiles, and the header is a plain wordmark with a one-sentence subtitle and two actions (Seal, Rotate KEK); Refresh and Re-wrap secrets moved into the sections they affect. Custodian shares, dynamic leases, the audit ledger and key versions render as dense lists with mono values, and every button, input and checkbox now meets the 44px minimum control size.
+- Gave the dashboard its own look: a sage-stone page with a dark navigation rail on the left (Status, Secrets, Keys, Leases, Audit, each with a live count) and one section on screen at a time. Secrets are an indexed ledger with a key-version column, key versions show a meter of how many secrets use the active key, and leases and audit entries are tables with their hashes in monospace. Headings use Fraunces, body text Public Sans and hashes Source Code Pro, all self-hosted. Panels carry a heavy top rule instead of shadows, corners are nearly square, and every button, input and checkbox keeps the 44px minimum size.
 
 ## [1.0.0] - 2026-09-15
 

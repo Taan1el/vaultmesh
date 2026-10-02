@@ -30,7 +30,7 @@ export function UnsealPanel({ state, shares, busy, onSubmit, onReset }: UnsealPa
   return (
     <section className="panel" aria-labelledby="unseal-title">
       <div className="panel-heading">
-        <h2 id="unseal-title">Custodian unseal</h2>
+        <h3 id="unseal-title">Custodian unseal</h3>
         <span className="muted">{sealed ? `${state?.sharesSubmitted ?? 0} of ${threshold} shares` : 'Unsealed'}</span>
       </div>
       {sealed ? (

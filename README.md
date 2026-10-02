@@ -12,9 +12,9 @@ The demo runs entirely in your browser: the same validation, Shamir, lease, audi
 
 ## Screenshot
 
-![VaultMesh dashboard with the unsealed vault, a stats strip and the secret inventory table](docs/screenshots/01-dashboard.png)
+![VaultMesh dashboard with the ink navigation rail and the indexed secret ledger](docs/screenshots/01-dashboard.png)
 
-More screenshots: [inspecting a decrypted secret](docs/screenshots/02-inspect-secret.png), [custodian unseal and dynamic leases](docs/screenshots/03-unseal-and-leases.png), [mobile layout](docs/screenshots/04-mobile.png), [browser workflow with access review](docs/screenshots/04-browser-workflow.png).
+More screenshots: [inspecting a decrypted secret](docs/screenshots/02-inspect-secret.png), [sealed vault with the custodian share slots](docs/screenshots/03-unseal-and-leases.png), [mobile layout](docs/screenshots/04-mobile.png), [audit ledger](docs/screenshots/04-browser-workflow.png).
 
 ## Features
 
@@ -24,7 +24,7 @@ More screenshots: [inspecting a decrypted secret](docs/screenshots/02-inspect-se
 - **Dynamic leases**: a dynamic secret issues a time-limited lease on read, renewable up to 5 times and capped by a max TTL. Expired leases are swept automatically, and reading again issues a fresh lease.
 - **Read access review**: inspect actions can run through an approval-policy simulation. Sensitive sample paths require a purpose plus the demo approval code before plaintext is returned, and denied reads are written to the audit ledger.
 - **Tamper-evident audit ledger**: every action is chained with a SHA-256 hash over the entry before it, and a verification endpoint reports exactly where a chain breaks.
-- **React 19 dashboard**: a stats strip for the vault totals, a secret inventory table with a decrypt-and-inspect drawer, custodian unseal with a share checklist, key version history, lease countdowns, and the audit ledger, polling every 5 seconds.
+- **React 19 dashboard**: an ink navigation rail (Status, Secrets, Keys, Leases, Audit) with live counts and one section on screen at a time. Secrets are an indexed ledger with a key-version column and a decrypt-and-inspect drawer; the other sections cover custodian unseal with a share checklist, key versions with a re-wrap meter, lease countdowns and the hash-chained audit ledger, polling every 5 seconds.
 - **GitHub Pages demo mode**: no backend required; data is seeded and kept in your browser's localStorage, with a "Reset demo data" control.
 
 ## Getting started

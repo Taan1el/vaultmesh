@@ -192,7 +192,7 @@ a:hover { color: var(--ink); }
   gap: 0.5rem 1rem;
   margin-bottom: 1rem;
 }
-.panel-heading h2 { font-size: 20px; }
+.panel-heading h3 { font-size: 20px; }
 .panel-heading-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 1rem; font-size: 13px; color: var(--ink-2); }
 .hint, .panel-note { font-size: 13px; color: var(--ink-2); }
 .panel-note { margin-bottom: 1rem; }
