@@ -204,17 +204,31 @@ async function renderLoaded() {
   expect(await screen.findByText('Test API key')).toBeInTheDocument();
 }
 
+function go(section: string) {
+  fireEvent.click(
+    within(screen.getByRole('navigation', { name: 'Sections' })).getByRole('button', { name: new RegExp(`^${section}`) })
+  );
+}
+
 describe('App', () => {
   it('shows vault state, inventory, lease countdowns and the audit check', async () => {
     await renderLoaded();
 
     expect(screen.getByRole('status', { name: '' })).toHaveTextContent('UNSEALED');
     expect(screen.getByText('secret/dynamic/token', { selector: 'td small' })).toBeInTheDocument();
+    expect(screen.getByText('2 paths')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Secrets/ })).toHaveAttribute('aria-current', 'page');
+    go('Leases');
     expect(screen.getByText(/Expires in (49|50) s/)).toBeInTheDocument();
     expect(screen.getByText(/Expired at/)).toBeInTheDocument();
+    go('Audit');
     expect(screen.getByText('Chain verified, 1 entry')).toBeInTheDocument();
+    go('Keys');
     expect(screen.getByText('1 version')).toBeInTheDocument();
-    expect(screen.getByText('2 paths')).toBeInTheDocument();
+    go('Status');
+    expect(screen.getByRole('heading', { name: 'Vault status' })).toBeInTheDocument();
+    expect(screen.getByText('Active KEK')).toBeInTheDocument();
+    go('Leases');
     // Only the active lease offers renew and revoke.
     expect(screen.getAllByRole('button', { name: /Renew lease/ })).toHaveLength(1);
   });
@@ -307,6 +321,7 @@ describe('App', () => {
     fake.vault.submittedShareIndexes = [1];
     fake.vault.sharesSubmitted = 1;
     await renderLoaded();
+    go('Status');
 
     expect(screen.getByText('1 of 3 shares')).toBeInTheDocument();
     const shareInput = screen.getByLabelText('Custodian share');
@@ -332,6 +347,7 @@ describe('App', () => {
     fake.vault.submittedShareIndexes = [2];
     fake.vault.sharesSubmitted = 1;
     await renderLoaded();
+    go('Status');
 
     fireEvent.click(screen.getByRole('button', { name: 'Clear submitted shares' }));
 
@@ -342,6 +358,7 @@ describe('App', () => {
 
   it('renews and revokes the active lease', async () => {
     await renderLoaded();
+    go('Leases');
 
     fireEvent.click(screen.getByRole('button', { name: 'Renew lease for secret/dynamic/token' }));
     expect(await screen.findByText('Lease for secret/dynamic/token renewed')).toBeInTheDocument();
@@ -367,6 +384,7 @@ describe('App', () => {
 
   it('reports the re-wrap count from the API', async () => {
     await renderLoaded();
+    go('Keys');
     fireEvent.click(screen.getByRole('button', { name: /Re-wrap secrets/ }));
     expect(await screen.findByText('Re-wrapped 2 secrets to KEK v1')).toBeInTheDocument();
   });
@@ -398,6 +416,7 @@ describe('App', () => {
   it('flags a broken audit chain', async () => {
     fake.breakAuditChain();
     await renderLoaded();
+    go('Audit');
     expect(screen.getByText('Chain broken at entry 5')).toHaveClass('danger-text');
   });
 

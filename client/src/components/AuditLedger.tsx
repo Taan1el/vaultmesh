@@ -21,27 +21,40 @@ export function AuditLedger({ entries, verification }: AuditLedgerProps) {
         <h2 id="audit-title">Audit ledger</h2>
         <span className={broken ? 'danger-text' : 'muted'}>{verificationLabel(verification)}</span>
       </div>
-      <p className="muted" style={{ marginBottom: '0.75rem' }}>
+      <p className="panel-note">
         Latest {countLabel(entries.length, 'entry', 'entries')}. Each hash covers the entry and the hash before it.
       </p>
-      <ul className="dense-list">
-        {entries.map((entry) => (
-          <li key={entry.id} className="dense-row">
-            <div className="dense-row-main">
-              <strong>
-                {entry.action}
-                {entry.status !== 'SUCCESS' ? <span className="tag warn"> {entry.status}</span> : null}
-              </strong>
-              <small>
-                {entry.details} &middot; {entry.actor} at {formatTime(entry.timestamp)}
-              </small>
-            </div>
-            <span className="dense-row-value" title={entry.entryHash}>
-              {maskHex(entry.entryHash)}
-            </span>
-          </li>
-        ))}
-      </ul>
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th scope="col">Action</th>
+              <th scope="col">Detail</th>
+              <th scope="col">Actor</th>
+              <th scope="col">Time</th>
+              <th scope="col">Hash</th>
+            </tr>
+          </thead>
+          <tbody>
+            {entries.map((entry) => (
+              <tr key={entry.id}>
+                <td>
+                  <strong>
+                    {entry.action}
+                    {entry.status !== 'SUCCESS' ? <span className="tag warn">{entry.status}</span> : null}
+                  </strong>
+                </td>
+                <td>{entry.details}</td>
+                <td className="mono">{entry.actor}</td>
+                <td className="mono">{formatTime(entry.timestamp)}</td>
+                <td className="mono" title={entry.entryHash}>
+                  {maskHex(entry.entryHash)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </section>
   );
 }

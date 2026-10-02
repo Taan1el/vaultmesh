@@ -9,10 +9,14 @@ function escapeRegExp(value: string): string {
 test('operates the vault lifecycle from the dashboard', async ({ page, request }) => {
   await page.goto('/');
   const vaultStatus = page.locator('.status-pill');
+  const openSection = (name: string) =>
+    page.getByRole('navigation', { name: 'Sections' }).getByRole('button', { name: new RegExp(`^${name}`) }).click();
 
   await expect(page.getByRole('heading', { name: 'VaultMesh' })).toBeVisible();
   await expect(vaultStatus).toContainText('UNSEALED');
+  await openSection('Audit');
   await expect(page.getByText('Audit ledger')).toBeVisible();
+  await openSection('Secrets');
 
   await page
     .getByRole('row', { name: /secret\/production\/database/ })
@@ -48,6 +52,7 @@ test('operates the vault lifecycle from the dashboard', async ({ page, request }
   const { shares } = (await shareResponse.json()) as { shares: string[] };
   expect(shares).toHaveLength(5);
 
+  await openSection('Status');
   const shareInput = page.getByLabel('Custodian share');
   const submitShare = page.getByRole('button', { name: 'Submit share' });
   const clearShares = page.getByRole('button', { name: 'Clear submitted shares' });
@@ -60,6 +65,7 @@ test('operates the vault lifecycle from the dashboard', async ({ page, request }
 
   await expect(vaultStatus).toContainText('UNSEALED');
 
+  await openSection('Secrets');
   await createdSecretRow.getByRole('button', { name: 'Inspect' }).click();
   await expect(page.getByRole('dialog')).toContainText('reports:read');
   await page.getByRole('button', { name: 'Close' }).click();
@@ -67,6 +73,7 @@ test('operates the vault lifecycle from the dashboard', async ({ page, request }
   await page.getByRole('button', { name: 'Rotate KEK' }).click();
   await expect(page.getByText('New KEK version created')).toBeVisible();
 
+  await openSection('Keys');
   await page.getByRole('button', { name: /Re-wrap secrets/ }).click();
   await expect(page.getByText(/Re-wrapped \d+ secrets? to KEK v\d+/)).toBeVisible();
   await expect(page.getByText(/KEK v\d+/).first()).toBeVisible();

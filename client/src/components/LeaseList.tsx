@@ -38,49 +38,69 @@ export function LeaseList({ leases, disabled, onRenew, onRevoke }: LeaseListProp
         <h2 id="leases-title">Dynamic leases</h2>
         <span className="muted">{leases.filter((lease) => lease.status === 'ACTIVE').length} active</span>
       </div>
-      <ul className="dense-list">
-        {leases.length === 0 ? <li className="muted">No leases have been issued.</li> : null}
-        {leases.map((lease) => {
-          const expired = lease.status === 'EXPIRED' || Date.parse(lease.expiresAt) <= now;
-          const active = lease.status === 'ACTIVE' && !expired;
-          const statusLabel = active ? 'Active' : lease.status === 'REVOKED' ? 'Revoked' : 'Expired';
-          return (
-            <li key={lease.id} className="dense-row">
-              <div className="dense-row-main">
-                <strong>{lease.secretPath}</strong>
-                <small>
-                  {describeLease(lease, now)}. Renewed {lease.renewCount} of {lease.maxRenewals} times.
-                </small>
-              </div>
-              <div className="dense-row-actions">
-                <span className={active ? 'tag active' : 'tag'}>{statusLabel}</span>
-                {active ? (
-                  <div className="button-row">
-                    <button
-                      type="button"
-                      className="btn btn-secondary"
-                      onClick={() => onRenew(lease)}
-                      disabled={disabled || lease.renewCount >= lease.maxRenewals}
-                      aria-label={`Renew lease for ${lease.secretPath}`}
-                    >
-                      Renew
-                    </button>
-                    <button
-                      type="button"
-                      className="btn btn-danger"
-                      onClick={() => onRevoke(lease)}
-                      disabled={disabled}
-                      aria-label={`Revoke lease for ${lease.secretPath}`}
-                    >
-                      Revoke
-                    </button>
-                  </div>
-                ) : null}
-              </div>
-            </li>
-          );
-        })}
-      </ul>
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th scope="col">Path</th>
+              <th scope="col">State</th>
+              <th scope="col">Expiry</th>
+              <th scope="col">Renewals</th>
+              <th scope="col" className="col-actions">
+                Actions
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {leases.length === 0 ? (
+              <tr>
+                <td colSpan={5} className="muted">
+                  No leases have been issued.
+                </td>
+              </tr>
+            ) : null}
+            {leases.map((lease) => {
+              const expired = lease.status === 'EXPIRED' || Date.parse(lease.expiresAt) <= now;
+              const active = lease.status === 'ACTIVE' && !expired;
+              const statusLabel = active ? 'Active' : lease.status === 'REVOKED' ? 'Revoked' : 'Expired';
+              return (
+                <tr key={lease.id}>
+                  <td className="mono">{lease.secretPath}</td>
+                  <td>
+                    <span className={active ? 'state active' : 'state'}>{statusLabel}</span>
+                  </td>
+                  <td className="mono">{describeLease(lease, now)}</td>
+                  <td className="mono">{`${lease.renewCount} of ${lease.maxRenewals}`}</td>
+                  <td className="col-actions">
+                    {active ? (
+                      <div className="button-row">
+                        <button
+                          type="button"
+                          className="btn btn-secondary"
+                          onClick={() => onRenew(lease)}
+                          disabled={disabled || lease.renewCount >= lease.maxRenewals}
+                          aria-label={`Renew lease for ${lease.secretPath}`}
+                        >
+                          Renew
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-danger"
+                          onClick={() => onRevoke(lease)}
+                          disabled={disabled}
+                          aria-label={`Revoke lease for ${lease.secretPath}`}
+                        >
+                          Revoke
+                        </button>
+                      </div>
+                    ) : null}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
     </section>
   );
 }
