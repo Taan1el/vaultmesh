@@ -168,6 +168,7 @@ Shapes (`VaultState`, `StoredSecret`, `DecryptedSecret`, `SecretLease`, `KekVers
 - **API** (`server/test/api-errors.test.ts`, `api-validation.test.ts`): the JSON error shape, unknown routes returning a 404, malformed and oversized request bodies, and that error responses never leak internal detail.
 - **Client** (`client/src/App.test.tsx`, React Testing Library): the unseal flow, secret inventory, read access review controls, inspect drawer, lease countdowns and actions, the audit ledger, and singular/plural count labels.
 - **Demo adapter** (`client/src/services/demoApi.test.ts`, `demoCrypto.test.ts`, `api.test.ts`): the in-browser vault against the same `VaultApi` interface as the real API, Web Crypto envelope encryption round-trips, and the real-vs-demo switch.
+- **Accessibility** (`client/src/App.a11y.test.tsx`, axe-core through vitest-axe): each of the five sections and the open secret drawer are checked against the WCAG 2 A and AA rules. jsdom cannot compute colors or layout, so color contrast is checked outside jsdom, from computed values in a real browser.
 - **Browser workflow** (`tests/e2e/vault-workflow.spec.ts`, Playwright): the real dashboard plus API path for inspect, create dynamic secret, seal, failed read while sealed, three-share unseal, read after unseal, KEK rotate and re-wrap.
 
 Run the unit and component suites with `npm test` (or `npm run test:server` / `npm run test:client` separately). Run the browser workflow with `npm run test:e2e`.

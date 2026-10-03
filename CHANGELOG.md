@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- Automated accessibility tests that run axe-core against the Status, Secrets, Keys, Leases and Audit sections and the open secret drawer, using the WCAG 2 A and AA rules. They found no violations, so no interface changes were needed. Color contrast is not covered because jsdom cannot compute colors.
+
 ### Changed
 - Gave the dashboard its own look: a sage-stone page with a dark navigation rail on the left (Status, Secrets, Keys, Leases, Audit, each with a live count) and one section on screen at a time. Secrets are an indexed ledger with a key-version column, key versions show a meter of how many secrets use the active key, and leases and audit entries are tables with their hashes in monospace. Headings use Fraunces, body text Public Sans and hashes Source Code Pro, all self-hosted. Panels carry a heavy top rule instead of shadows, corners are nearly square, and every button, input and checkbox keeps the 44px minimum size.
 
