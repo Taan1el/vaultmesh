@@ -28,7 +28,7 @@ export function SecretDrawer({ secret, onClose }: SecretDrawerProps) {
       <p className="muted">
         {secret.path}, encrypted under KEK v{secret.kekVersion}
       </p>
-      <pre>{body}</pre>
+      <pre role="region" tabIndex={0} aria-label="Decrypted value">{body}</pre>
       {secret.lease ? (
         <p className="muted">
           Lease {secret.lease.id} expires {formatDateTime(secret.lease.expiresAt)}.

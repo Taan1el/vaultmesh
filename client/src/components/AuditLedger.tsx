@@ -24,7 +24,7 @@ export function AuditLedger({ entries, verification }: AuditLedgerProps) {
       <p className="panel-note">
         Latest {countLabel(entries.length, 'entry', 'entries')}. Each hash covers the entry and the hash before it.
       </p>
-      <div className="table-wrap">
+      <div className="table-wrap" role="region" tabIndex={0} aria-label="Audit ledger table">
         <table>
           <thead>
             <tr>

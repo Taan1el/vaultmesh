@@ -316,7 +316,7 @@ export function App() {
                     <span>{loading ? 'Loading' : countLabel(snapshot.secrets.length, 'path')}</span>
                   </div>
                 </div>
-                <div className="table-wrap">
+                <div className="table-wrap" role="region" tabIndex={0} aria-label="Secrets table">
                   <table>
                     <thead>
                       <tr>
@@ -457,7 +457,7 @@ export function App() {
                   </div>
                   <span className="meter-value">{`${secretsOnActiveKey} / ${snapshot.secrets.length}`}</span>
                 </div>
-                <div className="table-wrap">
+                <div className="table-wrap" role="region" tabIndex={0} aria-label="Key usage table">
                   <table>
                     <thead>
                       <tr>
