@@ -117,3 +117,30 @@ describe('accessibility', () => {
     expect(await axe(document.body)).toHaveNoViolations();
   });
 });
+
+describe('scrollable regions', () => {
+  const SCROLLERS = '.table-wrap, .drawer pre, [class*="scroll"]';
+
+  function expectKeyboardReachable(root: ParentNode) {
+    const found = Array.from(root.querySelectorAll(SCROLLERS));
+    for (const el of found) {
+      expect(el.getAttribute('role')).toBe('region');
+      expect(el.getAttribute('tabindex')).toBe('0');
+      expect((el.getAttribute('aria-label') ?? '').trim()).not.toBe('');
+    }
+    return found.length;
+  }
+
+  it.each(['Secrets', 'Keys', 'Leases', 'Audit'])('labels every sideways scroller on the %s section', async (section) => {
+    const { container, go } = await renderLoaded();
+    await go(section);
+    expect(expectKeyboardReachable(container)).toBeGreaterThan(0);
+  });
+
+  it('labels the scrollable value in the secret drawer', async () => {
+    const { user } = await renderLoaded();
+    await user.click(screen.getByRole('button', { name: 'Inspect secret/test/api' }));
+    await screen.findByRole('dialog', { name: 'Test API key' });
+    expect(expectKeyboardReachable(document.body)).toBeGreaterThan(0);
+  });
+});
