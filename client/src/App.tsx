@@ -175,7 +175,7 @@ export function App() {
 
   async function resetDemo() {
     if (!resetDemoData) return;
-    if (!window.confirm('Reset the demo? Everything you changed in this browser is replaced with fresh sample data.')) return;
+    if (!window.confirm('Reset sample data? Your encrypted workspace is kept.')) return;
     setSelectedSecret(null);
     await runAction(resetDemoData, 'Demo data reset');
   }

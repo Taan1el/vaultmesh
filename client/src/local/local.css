@@ -1,0 +1,28 @@
+.local-source { padding: 1rem var(--page-pad, 2rem); display: flex; flex-wrap: wrap; align-items: center; gap: 1rem 2rem; background: var(--surface); border-bottom: 1px solid var(--rule); }
+.local-source { padding-left: calc(var(--rail-width) + var(--page-pad, 2rem)); }
+.local-source .field { min-width: 200px; }
+.local-source p { font-size: 13px; color: var(--ink-2); }
+.local-source select, .local-vault select { min-height: 44px; padding: 0.5rem 0.75rem; background: var(--surface); border: 1px solid var(--rule-strong); border-radius: var(--radius); }
+.local-source button { min-height: 44px; }
+.local-vault .app-main { min-width: 0; }
+.local-vault .rail-link { text-align: left; }
+.local-vault .rail-count { flex-shrink: 0; }
+.local-vault .table-scroll { overflow: auto; position: relative; }
+.local-vault table { min-width: 680px; }
+.local-vault th { text-align: left; }
+.local-vault tbody th { text-transform: none; letter-spacing: normal; font-weight: 400; font-size: 14px; border-bottom: 1px solid var(--rule); }
+.local-vault tbody tr:last-child th { border-bottom: 0; }
+.local-vault .local-wrap { overflow-wrap: anywhere; white-space: pre-wrap; }
+.local-vault .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+.local-status { margin-top: 1rem; font-size: 13px; color: var(--ink-2); }
+.local-backup a { display: inline-flex; align-items: center; min-height: 44px; }
+.local-reveal { border-top: 1px solid var(--rule-strong); margin-top: 1.5rem; padding-top: 1.5rem; }
+.local-reveal pre { max-height: 320px; overflow: auto; padding: 1rem; border: 1px solid var(--rule); font-family: var(--font-mono); }
+.local-shares { display: grid; gap: 1.5rem; padding-left: 1.5rem; }
+.local-shares li { min-width: 0; }
+.local-audit { overflow-wrap: anywhere; padding-left: 1.5rem; }
+.local-modal-backdrop { position: fixed; inset: 0; z-index: 100; background: rgba(22, 32, 26, 0.5); display: grid; place-items: center; padding: 1rem; }
+.local-modal { width: min(560px, 100%); max-height: calc(100vh - 2rem); overflow: auto; }
+.local-modal-scroll { overflow: auto; max-height: 55vh; }
+.local-modal form { min-width: 0; }
+@media (max-width: 600px) { .local-source { padding-inline: 1rem; } .local-vault .topbar-actions { width: 100%; } .local-vault .topbar-actions .btn { flex: 1; } }

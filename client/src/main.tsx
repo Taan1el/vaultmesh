@@ -4,11 +4,13 @@ import '@fontsource-variable/fraunces';
 import '@fontsource-variable/public-sans';
 import '@fontsource-variable/source-code-pro';
 import './styles/tokens.css';
-import { App } from './App';
+import { WorkspaceApp } from './local/WorkspaceApp';
+import { registerOffline } from './local/offline';
 import './styles.css';
 
 createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <App />
+    <WorkspaceApp />
   </React.StrictMode>
 );
+registerOffline();
