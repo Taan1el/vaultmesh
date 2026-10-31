@@ -1,5 +1,6 @@
 import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
+import { localFirstBuild } from './localBuild';
 
 // "vite build --mode pages" builds the static GitHub Pages demo: it is served
 // from /vaultmesh/, uses the in-browser backend and goes to dist-pages so it
@@ -14,10 +15,12 @@ export default defineConfig(({ mode }) => {
 
   return {
     base: pages ? '/vaultmesh/' : '/',
-    plugins: [react()],
+    plugins: [react(), ...(pages ? [localFirstBuild({ base: '/vaultmesh/', id: 'vaultmesh', name: 'VaultMesh', description: 'An encrypted local notebook for secrets.', themeColor: '#183d32' })] : [])],
     build: {
       outDir: pages ? 'dist-pages' : 'dist',
+      assetsInlineLimit: pages ? 0 : undefined,
     },
+    define: { 'import.meta.env.VITE_DEMO_MODE': JSON.stringify(pages ? 'true' : 'false') },
     server: {
       port: 3005,
       proxy: {
