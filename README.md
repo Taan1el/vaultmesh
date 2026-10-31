@@ -1,6 +1,6 @@
 # VaultMesh
 
-VaultMesh is a local secrets manager for trying out the mechanics behind a production KMS end to end: envelope encryption, Shamir threshold unseal, key rotation, dynamic leased credentials and a tamper-evident audit log. It ships as an Express API with a React dashboard, for developers who want to see how these pieces fit together without standing up a real KMS.
+VaultMesh keeps an encrypted notebook of secrets in your browser. Create a passphrase-protected workspace, save secret paths and values locally, and take encrypted backups with you. A separate sample console and optional Express API cover custodian unseal, dynamic leases and a hash-chained audit ledger.
 
 [![CI](https://github.com/Taan1el/vaultmesh/actions/workflows/ci.yml/badge.svg)](https://github.com/Taan1el/vaultmesh/actions/workflows/ci.yml)
 [![Pages](https://github.com/Taan1el/vaultmesh/actions/workflows/pages.yml/badge.svg)](https://github.com/Taan1el/vaultmesh/actions/workflows/pages.yml)
@@ -8,15 +8,29 @@ VaultMesh is a local secrets manager for trying out the mechanics behind a produ
 
 **Live demo:** https://taan1el.github.io/vaultmesh/
 
-The demo runs entirely in your browser: the same validation, Shamir, lease, audit and seed logic the server uses runs against the Web Crypto API and localStorage instead of a real API, so it works with no backend.
+The Pages app runs entirely in your browser, with no account, API key or backend. Choose **Your workspace** for your encrypted notebook, or **Sample data** for the resettable console examples. Resetting sample data leaves the encrypted workspace untouched.
+
+## Use it with your own data
+
+Create a vault in **Your workspace** with a passphrase of at least 12 characters. Add, inspect, edit or delete secret paths and values in the indexed ledger. All contents, including secret names and timestamps, are encrypted before IndexedDB receives them. The passphrase, decrypted values, data key and recovery shares stay in memory and are cleared from the page on lock.
+
+**Export vault** downloads one versioned JSON file containing KDF parameters, salt, nonces, wrapped data key and ciphertext. **Import vault** validates that format before replacing saved data, asks for confirmation when a vault already exists, and leaves it locked. Keep exports outside this browser; clearing browser data removes its saved copy. **Delete vault** under Status removes the saved copy after confirmation and locks its decrypted contents. Vault contents are limited to 1 MiB and 500 entries, with imported files limited to 4 MiB.
+
+The passphrase derives a wrapping key with PBKDF2-SHA-256 at 600,000 iterations and a random 16-byte salt. A random 256-bit data key encrypts the notebook with AES-GCM. A separate AES-GCM operation wraps that data key. Every encryption uses a new 12-byte nonce and a 128-bit authentication tag; vault identity and purpose are authenticated. Rotating the passphrase re-wraps the data key with a new salt while preserving the encrypted notebook. Older exports still use their older passphrases.
+
+Under **Keys**, create five recovery shares and keep them separately. Any three from the same set, together with an encrypted vault file, can recover the notebook and set a new passphrase. Shares use the existing Shamir implementation and are never saved in browser storage. Older share sets still recover the same data key after passphrase rotation. Losing both the passphrase and enough recovery shares makes recovery unavailable.
+
+The page locks after five minutes of inactivity by default, with one- and fifteen-minute choices, and locks when the tab is hidden unless that option is turned off. These settings apply to the current open page. Copying a value schedules clipboard clearing after 30 seconds and locking also attempts to clear it. Browser clipboard permissions and background scheduling can prevent timely clearing; a failed clear is reported. When clipboard reads are permitted, newer contents copied elsewhere are preserved.
+
+Your data stays in this browser. The installed Pages app works offline after its first load, precaches its own assets under `/vaultmesh/`, and restricts scripts and connections to its own host through Content Security Policy. No requests go to other hosts. Development mode retains the optional API and hot reload. This workspace is an encrypted notebook for secrets, not an audited password manager; its session activity list is temporary, and it issues no live credentials or leases.
 
 ## Screenshot
 
-![VaultMesh dashboard with the ink navigation rail and the indexed secret ledger](docs/screenshots/01-dashboard.png)
+![Encrypted local notebook with the ink navigation rail and indexed secret ledger](docs/screenshots/01-dashboard.png)
 
-More screenshots: [inspecting a decrypted secret](docs/screenshots/02-inspect-secret.png), [sealed vault with the custodian share slots](docs/screenshots/03-unseal-and-leases.png), [mobile layout](docs/screenshots/04-mobile.png), [audit ledger](docs/screenshots/04-browser-workflow.png).
+More screenshots: [inspecting a local secret](docs/screenshots/02-inspect-secret.png), [locked encrypted vault](docs/screenshots/03-unseal-and-leases.png), [mobile layout](docs/screenshots/04-mobile.png), [temporary session activity](docs/screenshots/04-browser-workflow.png).
 
-## Features
+## Sample console and API features
 
 - **Custodian unseal**: 3-of-5 Shamir secret sharing rebuilds the root key from any three of five shares. A forged, duplicate or malformed share is rejected, and a failed attempt clears progress instead of leaving the vault stuck.
 - **Envelope encryption**: every secret gets a single-use AES-256-GCM data-encryption key (DEK), which is itself wrapped by the active key-encryption key (KEK).
