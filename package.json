@@ -1,6 +1,6 @@
 {
   "name": "vaultmesh",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Local secrets manager with envelope encryption, Shamir threshold unseal, key rotation and dynamic leases",
   "private": true,
   "type": "module",
