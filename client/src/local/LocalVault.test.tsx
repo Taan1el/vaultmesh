@@ -3,7 +3,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { LocalVault } from './LocalVault';
-import { createVault, putEntry, sealData, serializeVault, type VaultFile } from './vault';
+import { createVault, putEntry, sealData, serializeVault, unlockVault, type VaultFile } from './vault';
 import { axe } from '../test/axe';
 
 const storage = vi.hoisted(() => ({ load: vi.fn(), save: vi.fn(), download: vi.fn() }));
@@ -45,7 +45,7 @@ describe('local encrypted notebook', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Inspect synthetic/path' })); expect(screen.getByText('synthetic plaintext')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Edit synthetic/path' })); expect(screen.getByLabelText('Secret value')).toHaveValue('synthetic plaintext');
     fireEvent.click(screen.getByRole('button', { name: /^Keys/ }));
-    fireEvent.click(screen.getByRole('button', { name: 'Create recovery shares' })); expect((screen.getByLabelText('Recovery share 1') as HTMLTextAreaElement).value).toContain('vmrecovery-1:');
+    fireEvent.click(screen.getByRole('button', { name: 'Create recovery shares' })); expect((screen.getByLabelText('Recovery share 1') as HTMLTextAreaElement).value).toContain('vmrecovery-2:');
     fireEvent.click(screen.getByRole('button', { name: 'Lock vault' }));
     expect(screen.queryByText('synthetic/path')).not.toBeInTheDocument(); expect(screen.queryByDisplayValue('synthetic plaintext')).not.toBeInTheDocument(); expect(screen.queryByLabelText('Recovery share 1')).not.toBeInTheDocument();
     expect(screen.getByLabelText('Passphrase', { exact: true })).toHaveValue('');
@@ -199,5 +199,80 @@ describe('local encrypted notebook', () => {
     expect(screen.getByRole('button', { name: 'Unlock vault' })).toBeDisabled();
     expect(screen.queryByDisplayValue('stale plaintext')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Reload saved vault' })).toBeEnabled();
+  });
+  async function openKeys() { fireEvent.click(screen.getByRole('button', { name: /^Keys/ })); }
+  function rekeyForm(first: string, second = first) { change('Passphrase for the re-keyed vault', first); change('Confirm passphrase for the re-keyed vault', second); }
+  it('re-keys the vault in one revision-checked save and says what stops working', async () => {
+    await open(); await create(); await add(); await openKeys();
+    fireEvent.click(screen.getByRole('button', { name: 'Create recovery shares' })); expect(screen.getByText(/^Share set/)).toBeInTheDocument();
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    rekeyForm('synthetic rekeyed phrase'); fireEvent.click(screen.getByRole('button', { name: 'Re-key vault' }));
+    await screen.findByText(/^Vault re-keyed\./);
+    expect(confirm.mock.calls[0][0]).toContain('will not open the vault as it is from now on');
+    expect(screen.getByRole('status')).toHaveTextContent('will not open the vault as it is now');
+    expect(storage.save).toHaveBeenCalledTimes(3); expect(storage.save.mock.calls[2][1]).toEqual({ expectedRevision: 2 });
+    const before = storage.save.mock.calls[1][0] as VaultFile; const after = storage.save.mock.calls[2][0] as VaultFile;
+    expect(after.id).not.toBe(before.id);
+    expect(JSON.stringify(after)).not.toContain('synthetic plaintext'); expect(JSON.stringify(storage.save.mock.calls)).not.toContain('synthetic rekeyed phrase');
+    expect((await unlockVault(after, 'synthetic rekeyed phrase')).data.entries[0].value).toBe('synthetic plaintext');
+    expect(screen.queryByLabelText('Recovery share 1')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Passphrase for the re-keyed vault')).toHaveValue('');
+    // The session carries on with the new key: a later save is sealed under it.
+    fireEvent.click(screen.getByRole('button', { name: /^Secrets/ })); change('Secret path', 'after/rekey'); change('Secret value', 'later value');
+    fireEvent.click(screen.getByRole('button', { name: 'Save secret' })); await waitFor(() => expect(storage.save).toHaveBeenCalledTimes(4));
+    const later = storage.save.mock.calls[3][0] as VaultFile; expect(later.id).toBe(after.id);
+    expect((await unlockVault(later, 'synthetic rekeyed phrase')).data.entries).toHaveLength(2);
+  });
+  it('does not re-key without confirmation or with a mismatched passphrase', async () => {
+    await open(); await create(); await add(); await openKeys();
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    rekeyForm('synthetic rekeyed phrase', 'another mismatch phrase'); fireEvent.click(screen.getByRole('button', { name: 'Re-key vault' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Passphrase confirmation does not match'); expect(confirm).not.toHaveBeenCalled();
+    rekeyForm('synthetic rekeyed phrase'); fireEvent.click(screen.getByRole('button', { name: 'Re-key vault' }));
+    await waitFor(() => expect(confirm).toHaveBeenCalledTimes(1)); expect(storage.save).toHaveBeenCalledTimes(2);
+  });
+  it('rejects a weak passphrase for the re-keyed vault before anything is saved', async () => {
+    await open(); await create(); await add(); await openKeys(); vi.spyOn(window, 'confirm').mockReturnValue(true);
+    rekeyForm('aaaaaaaaaaaa'); fireEvent.click(screen.getByRole('button', { name: 'Re-key vault' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('one character repeated'); expect(storage.save).toHaveBeenCalledTimes(2);
+  });
+  it('keeps the current key and vault when the re-key save is interrupted', async () => {
+    await open(); await create(); await add(); await openKeys(); vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const saved = storage.save.mock.calls[1][0] as VaultFile; storage.save.mockRejectedValueOnce(new Error('Storage write was interrupted.'));
+    rekeyForm('synthetic rekeyed phrase'); fireEvent.click(screen.getByRole('button', { name: 'Re-key vault' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('interrupted');
+    expect(screen.getByRole('heading', { name: 'Re-key vault' })).toBeInTheDocument(); expect(screen.queryByText(/^Vault re-keyed\./)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /^Secrets/ })); change('Secret path', 'after/failure'); change('Secret value', 'still the old key');
+    fireEvent.click(screen.getByRole('button', { name: 'Save secret' })); await waitFor(() => expect(storage.save).toHaveBeenCalledTimes(4));
+    const later = storage.save.mock.calls[3][0] as VaultFile; expect(later.id).toBe(saved.id);
+    expect((await unlockVault(later, phrase)).data.entries).toHaveLength(2);
+  });
+  it('locks and keeps the saved vault when the re-key save finds a newer revision', async () => {
+    const { WorkspaceConflictError } = await import('./workspace'); await open(); await create(); await openKeys(); vi.spyOn(window, 'confirm').mockReturnValue(true);
+    storage.save.mockRejectedValueOnce(new WorkspaceConflictError());
+    rekeyForm('synthetic rekeyed phrase'); fireEvent.click(screen.getByRole('button', { name: 'Re-key vault' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('another tab');
+    expect(screen.getByRole('button', { name: 'Reload saved vault' })).toBeEnabled(); expect(screen.queryByDisplayValue('synthetic rekeyed phrase')).not.toBeInTheDocument();
+  });
+  it('shows no leftover key version, key count or lease labels in local mode', async () => {
+    await open(); await create(); await add();
+    expect(screen.queryByRole('button', { name: /^Leases/ })).not.toBeInTheDocument(); expect(screen.queryByText('Key version')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Keys/ })).toHaveTextContent('Open');
+    expect(screen.getAllByRole('columnheader').map((header) => header.textContent)).toEqual(['Index', 'Path', 'Updated', 'Actions']);
+  });
+  it('moves focus to the secret form when editing', async () => {
+    await open(); await create(); await add();
+    fireEvent.click(screen.getByRole('button', { name: 'Edit synthetic/path' }));
+    expect(screen.getByLabelText('Secret path')).toHaveFocus(); expect(screen.getByRole('heading', { name: 'Edit secret' })).toBeInTheDocument();
+  });
+  it('rejects a trivially weak passphrase when creating a vault, with a specific message', async () => {
+    await open(); change('Passphrase', 'abcdefghijkl'); change('Confirm passphrase', 'abcdefghijkl');
+    fireEvent.click(screen.getByRole('button', { name: 'Create vault' })); expect(await screen.findByRole('alert')).toHaveTextContent('simple sequence');
+    expect(storage.save).not.toHaveBeenCalled();
+  });
+  it('explains exactly what a lock clears', async () => {
+    await open(); await create(); fireEvent.click(screen.getByRole('button', { name: 'Lock vault' }));
+    expect(screen.getByRole('status')).toHaveTextContent('The key was zeroed and decrypted entries, form fields, recovery shares and the activity list were removed from this page.');
+    expect(screen.getByRole('status')).not.toHaveTextContent('clipboard');
   });
 });
