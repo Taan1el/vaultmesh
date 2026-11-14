@@ -73,14 +73,28 @@ function assetBytes(asset: Rollup.OutputAsset | Rollup.OutputChunk): string | Ui
 
 function serviceWorker(cachePrefix: string, version: string, base: string, files: string[]): string {
   return `const CACHE_PREFIX = ${JSON.stringify(cachePrefix)};
-const CACHE_NAME = CACHE_PREFIX + ${JSON.stringify(version)};
+const CACHE_NAME = cacheName(CACHE_PREFIX, ${JSON.stringify(version)});
 const BASE = ${JSON.stringify(base)};
 const PRECACHE = ${JSON.stringify(files)};
+// Built assets are fixed files; server CORS negotiation headers do not change them.
+const MATCH = { ignoreSearch: true, ignoreVary: true };
+
+function cacheName(prefix, version) {
+  return prefix + version;
+}
+
+// 'network-first' for the app page so a new build is seen at once, 'cache-first' for the
+// versioned files it loads, 'ignore' for anything this worker should not touch.
+function chooseStrategy(method, mode, origin, pathname, ownOrigin, base) {
+  if (method !== 'GET' || origin !== ownOrigin || !pathname.startsWith(base)) return 'ignore';
+  return mode === 'navigate' ? 'network-first' : 'cache-first';
+}
 
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE_NAME).then(async (cache) => {
     try {
-      await cache.addAll(PRECACHE);
+      // 'reload' skips the HTTP cache so a new worker never stores a stale copy of the page.
+      await cache.addAll(PRECACHE.map((url) => new Request(url, { cache: 'reload' })));
     } catch (error) {
       await caches.delete(CACHE_NAME);
       throw error;
@@ -95,24 +109,34 @@ self.addEventListener('activate', (event) => {
   }));
 });
 
+// The page asks for this when someone chooses to reload into the new version.
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'SKIP_WAITING') self.skipWaiting();
+});
+
+async function networkFirst(request) {
+  try {
+    return await fetch(request, { cache: 'no-cache' });
+  } catch (error) {
+    const cache = await caches.open(CACHE_NAME);
+    const page = (await cache.match(request, MATCH)) || (await cache.match(BASE + 'index.html'));
+    if (page) return page;
+    throw error;
+  }
+}
+
+async function cacheFirst(request) {
+  const cache = await caches.open(CACHE_NAME);
+  const cached = await cache.match(request, MATCH);
+  return cached || fetch(request);
+}
+
 self.addEventListener('fetch', (event) => {
   const request = event.request;
   const url = new URL(request.url);
-  if (request.method !== 'GET' || url.origin !== self.location.origin || !url.pathname.startsWith(BASE)) return;
-  event.respondWith(caches.open(CACHE_NAME).then(async (cache) => {
-    // Built assets are fixed files; server CORS negotiation headers do not change them.
-    const cached = await cache.match(request, { ignoreSearch: true, ignoreVary: true });
-    if (cached) return cached;
-    try {
-      return await fetch(request);
-    } catch (error) {
-      if (request.mode === 'navigate') {
-        const page = await cache.match(BASE + 'index.html');
-        if (page) return page;
-      }
-      throw error;
-    }
-  }));
+  const strategy = chooseStrategy(request.method, request.mode, url.origin, url.pathname, self.location.origin, BASE);
+  if (strategy === 'ignore') return;
+  event.respondWith(strategy === 'network-first' ? networkFirst(request) : cacheFirst(request));
 });
 `;
 }

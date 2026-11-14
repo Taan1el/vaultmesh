@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { App } from '../App';
 import { isDemoMode } from '../services/api';
 import { LocalVault } from './LocalVault';
+import { UpdateNotice } from './UpdateNotice';
 import { loadMode, saveMode, type WorkspaceMode } from './workspace';
 import './local.css';
 
@@ -19,7 +20,7 @@ export function WorkspaceApp() {
     return () => { active = false; window.removeEventListener('beforeinstallprompt', offered); };
   }, []);
   if (!isDemoMode) return <App />;
-  return <div className="app-shell"><section className="local-source" aria-label="Browser data source"><div className="field"><label htmlFor="local-data-source">Data source</label><select id="local-data-source" value={mode} disabled={!ready} onChange={(event) => {
+  return <div className="app-shell"><UpdateNotice /><section className="local-source" aria-label="Browser data source"><div className="field"><label htmlFor="local-data-source">Data source</label><select id="local-data-source" value={mode} disabled={!ready} onChange={(event) => {
     const next = event.target.value as WorkspaceMode;
     if (mode === 'workspace' && !window.confirm('Leave your workspace and lock its decrypted contents? Saved encrypted data is kept.')) return;
     void saveMode(next).then(() => { setMode(next); setError(''); }).catch(() => setError('Data source could not be saved.'));

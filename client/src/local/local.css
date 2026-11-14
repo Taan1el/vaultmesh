@@ -1,6 +1,7 @@
 .local-source { padding: 1rem var(--page-pad, 2rem); display: flex; flex-wrap: wrap; align-items: center; gap: 1rem 2rem; background: var(--surface); border-bottom: 1px solid var(--rule); }
 .local-source { padding-left: calc(var(--rail-width) + var(--page-pad, 2rem)); }
 .local-source .field { min-width: 200px; }
+.local-update p { color: var(--ink); font-size: 14px; }
 .local-source p { font-size: 13px; color: var(--ink-2); }
 .local-source select, .local-vault select { min-height: 44px; padding: 0.5rem 0.75rem; background: var(--surface); border: 1px solid var(--rule-strong); border-radius: var(--radius); }
 .local-source button { min-height: 44px; }

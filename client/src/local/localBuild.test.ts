@@ -76,7 +76,7 @@ describe('Pages local app build', () => {
 
     expect(precache).toContain('/vaultmesh/manifest.webmanifest');
     expect(precache).toContain('/vaultmesh/sw.js');
-    expect(worker).toMatch(/const CACHE_NAME = CACHE_PREFIX \+ "[0-9a-f]{16}";/);
+    expect(worker).toMatch(/const CACHE_NAME = cacheName\(CACHE_PREFIX, "[0-9a-f]{16}"\);/);
   });
 
   it('emits every font as a file allowed by the policy', async () => {
@@ -91,37 +91,83 @@ describe('Pages local app build', () => {
     expect(faces).toBeGreaterThan(0);
   });
 
-  it('serves cached pages offline and deletes only this app\'s older caches', async () => {
+  function load(overrides: Partial<{ fetch: (request: unknown, init?: unknown) => Promise<unknown>; keys: string[] }> = {}) {
     const handlers: Record<string, (event: unknown) => void> = {};
-    const cachedResponse = { body: 'cached page' };
     const deleted: string[] = [];
-    const match = worker.match(/const CACHE_PREFIX = ("[^;]+);/);
-    const prefix: string = JSON.parse(match![1]);
-    const cache = { addAll: vi.fn(async () => undefined), match: async () => cachedResponse };
+    const prefix: string = JSON.parse(worker.match(/const CACHE_PREFIX = ("[^;]+);/)![1]);
+    const cache = { addAll: vi.fn(async (_requests: unknown[]) => undefined), match: vi.fn(async () => ({ body: 'cached page' })) };
     const skipWaiting = vi.fn(async () => undefined);
-    const context = {
-      URL,
-      caches: { open: async () => cache, keys: async () => [`${prefix}old`, 'another-app-cache'], delete: async (key: string) => { deleted.push(key); } },
-      fetch: async () => { throw new Error('Server is off.'); },
+    class FakeRequest { constructor(public url: string, public init?: unknown) {} }
+    const fetchFile = vi.fn(overrides.fetch ?? (async () => { throw new Error('Server is off.'); }));
+    const context: Record<string, unknown> = {
+      URL, Request: FakeRequest,
+      caches: { open: async () => cache, keys: async () => overrides.keys ?? [], delete: async (key: string) => { deleted.push(key); } },
+      fetch: fetchFile,
       self: { location: { origin: 'https://local.test' }, addEventListener: (name: string, callback: (event: unknown) => void) => { handlers[name] = callback; }, skipWaiting, clients: { claim: async () => undefined } },
     };
     vm.runInNewContext(worker, context);
-    let installation: Promise<void> | undefined;
-    handlers.install({ waitUntil: (result: Promise<void>) => { installation = result; } });
-    await installation;
+    function request(url: string, mode = 'navigate', method = 'GET') {
+      let response: Promise<unknown> | undefined; const respondWith = vi.fn((result: Promise<unknown>) => { response = result; });
+      handlers.fetch({ request: { method, url, mode }, respondWith });
+      return { respondWith, response: () => response };
+    }
+    async function install() {
+      let installation: Promise<void> | undefined;
+      handlers.install({ waitUntil: (result: Promise<void>) => { installation = result; } });
+      await installation;
+    }
+    return { handlers, cache, deleted, prefix, skipWaiting, context, request, install, fetchFile };
+  }
+
+  it('serves cached pages offline and deletes only this app\'s older caches', async () => {
+    const prefix: string = JSON.parse(worker.match(/const CACHE_PREFIX = ("[^;]+);/)![1]);
+    const { handlers, cache, deleted, skipWaiting, request, install } = load({ keys: [`${prefix}old`, 'another-app-cache'] });
+    await install();
     expect(cache.addAll).toHaveBeenCalled();
     expect(skipWaiting).not.toHaveBeenCalled();
-    let response: Promise<unknown> | undefined;
-    handlers.fetch({ request: { method: 'GET', url: 'https://local.test/vaultmesh/', mode: 'navigate' }, respondWith: (result: Promise<unknown>) => { response = result; } });
-    expect(await response).toBe(cachedResponse);
-    const forbiddenResponse = vi.fn();
+    expect(await request('https://local.test/vaultmesh/').response()).toEqual({ body: 'cached page' });
     for (const url of ['https://outside.test/vaultmesh/', 'https://local.test/another-app/']) {
-      handlers.fetch({ request: { method: 'GET', url, mode: 'navigate' }, respondWith: forbiddenResponse });
+      expect(request(url).respondWith).not.toHaveBeenCalled();
     }
-    expect(forbiddenResponse).not.toHaveBeenCalled();
     let activation: Promise<void> | undefined;
     handlers.activate({ waitUntil: (result: Promise<void>) => { activation = result; } });
     await activation;
     expect(deleted).toEqual([`${prefix}old`]);
+  });
+
+  it('chooses the strategy by request: network-first pages, cache-first files, nothing for other origins, paths or methods', () => {
+    const { context } = load();
+    const choose = context.chooseStrategy as (...args: string[]) => string;
+    const own = 'https://local.test'; const base = '/vaultmesh/';
+    expect(choose('GET', 'navigate', own, '/vaultmesh/', own, base)).toBe('network-first');
+    expect(choose('GET', 'cors', own, '/vaultmesh/assets/index-abc.js', own, base)).toBe('cache-first');
+    expect(choose('POST', 'navigate', own, '/vaultmesh/', own, base)).toBe('ignore');
+    expect(choose('GET', 'navigate', 'https://outside.test', '/vaultmesh/', own, base)).toBe('ignore');
+    expect(choose('GET', 'navigate', own, '/another-app/', own, base)).toBe('ignore');
+    expect((context.cacheName as (...args: string[]) => string)('app-', 'abc123')).toBe('app-abc123');
+  });
+
+  it('fetches the page from the network first, bypassing the HTTP cache, and only falls back to the cached copy offline', async () => {
+    const fresh = { body: 'fresh page' };
+    const online = load({ fetch: async () => fresh });
+    expect(await online.request('https://local.test/vaultmesh/').response()).toBe(fresh);
+    expect(online.fetchFile.mock.calls[0][1]).toEqual({ cache: 'no-cache' });
+    expect(online.cache.match).not.toHaveBeenCalled();
+    expect(await load().request('https://local.test/vaultmesh/').response()).toEqual({ body: 'cached page' });
+    const files = load({ fetch: async () => fresh });
+    expect(await files.request('https://local.test/vaultmesh/assets/app.js', 'no-cors').response()).toEqual({ body: 'cached page' });
+    expect(files.fetchFile).not.toHaveBeenCalled();
+  });
+
+  it('precaches with cache reload requests and activates a waiting worker only when asked', async () => {
+    const { handlers, cache, skipWaiting, install } = load();
+    await install();
+    const requests = cache.addAll.mock.calls[0][0] as Array<{ url: string; init: unknown }>;
+    expect(requests.length).toBeGreaterThan(5);
+    for (const entry of requests) expect(entry.init).toEqual({ cache: 'reload' });
+    handlers.message({ data: { type: 'OTHER' } }); handlers.message({ data: null });
+    expect(skipWaiting).not.toHaveBeenCalled();
+    handlers.message({ data: { type: 'SKIP_WAITING' } });
+    expect(skipWaiting).toHaveBeenCalledOnce();
   });
 });
