@@ -159,7 +159,7 @@ export function LocalVault() {
         {!session && <section className="panel" aria-labelledby="unlock-title"><div className="panel-heading"><h3 id="unlock-title">{file ? 'Unlock encrypted vault' : 'Create your encrypted vault'}</h3></div>
           <form onSubmit={(event) => void open(event)}><label>Passphrase<input type="password" autoComplete={file ? 'current-password' : 'new-password'} minLength={12} maxLength={1024} required value={pass} disabled={isDisabled || blocked} onChange={(event) => setPass(event.target.value)} /></label>
             {!file && <label>Confirm passphrase<input type="password" autoComplete="new-password" required minLength={12} value={confirmation} disabled={isDisabled || blocked} onChange={(event) => setConfirmation(event.target.value)} /></label>}
-            <p className="hint">Use at least 12 characters. The passphrase is never saved. Keep an encrypted export and three recovery shares to recover without it.</p>
+            <p className="hint">Use at least 12 characters, not one repeated character or a simple sequence. The passphrase is never saved. Keep an encrypted export and three recovery shares to recover without it.</p>
             <button className="btn btn-primary" disabled={isDisabled || blocked} type="submit">{busy ? 'Working' : file ? 'Unlock vault' : 'Create vault'}</button></form>
           {file && <><button type="button" className="link-btn" disabled={isDisabled || blocked} onClick={() => setRecovering(!recovering)}>Recover with shares</button>{recovering && <form onSubmit={(event) => { event.preventDefault(); void run(async (operation) => {
             if (nextPass !== confirmation) throw new Error('Passphrase confirmation does not match.');

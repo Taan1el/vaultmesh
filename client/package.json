@@ -1,6 +1,6 @@
 {
   "name": "@vaultmesh/client",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "VaultMesh React dashboard: custodian unseal, key rotation, secret inventory and dynamic leases",
   "private": true,
   "type": "module",

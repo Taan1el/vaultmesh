@@ -4,6 +4,19 @@ All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.1.1] - 2026-11-14
+
+### Fixed
+- A pending clipboard clear is no longer cancelled when the vault locks, including the lock that happens when the tab is hidden. If the page is hidden or unfocused when the clear is due it waits and retries when you return, and a notice appears only if a visible page cannot clear the clipboard.
+- Import now asks for the file's passphrase and opens the file once before it replaces the saved vault, and the confirmation says how many entries are replaced by how many.
+- Added Re-key vault, which makes a new data key, re-encrypts every entry and saves it in one revision-checked write, and says that recovery shares and backup files made earlier will not open the vault as it is from then on.
+- New recovery shares carry a set ID and a checksum, and recovery names the line of a mistyped share or a share from another set or vault. Shares issued earlier are still accepted.
+- New passphrases are rejected when they are one repeated character, have fewer than 5 different characters or are a simple sequence, with a specific message. The 12 character minimum is unchanged and existing vaults still unlock.
+- The lock message and the Lock settings text now say what is cleared and that a copied value stays on the clipboard until its 30 second clear.
+- Removed the leftover Key version column, the fixed Keys count and the Leases section from the local workspace, and Edit now moves focus to the secret form.
+- The app page is fetched from the network first with the cached copy as the offline fallback, new workers precache with cache reload requests, and a quiet "A new version is ready." notice with a Reload button appears when an update is waiting.
+- Downloaded files keep their object URL for 10 seconds instead of revoking it immediately.
+
 ## [Unreleased]
 
 ### Added
