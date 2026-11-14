@@ -1,4 +1,4 @@
-import { combineShares, parseShare, splitSecret } from '../../../shared/shamir';
+import { checksumHex, combineShares, parseShare, splitSecret } from '../../../shared/shamir';
 
 export const KDF_ITERATIONS = 600_000;
 export const MAX_VAULT_BYTES = 4 * 1024 * 1024;
@@ -76,6 +76,28 @@ function aad(file: Pick<VaultFile, 'version' | 'id' | 'cipher'>, purpose: 'paylo
 function passphrase(value: string) {
   if (value.length < 12 || value.length > 1024) throw new Error('Passphrase must contain 12 to 1024 characters.');
 }
+/** True when every character follows the previous one by +1 or -1, wrapping 9 to 0 for digits and z to a for letters. */
+function isSimpleSequence(characters: string[]) {
+  const lower = characters.map((character) => character.toLowerCase());
+  const digits = lower.every((character) => /^[0-9]$/.test(character));
+  const letters = lower.every((character) => /^[a-z]$/.test(character));
+  const modulus = digits ? 10 : letters ? 26 : 0;
+  const values = lower.map((character) => digits ? Number(character) : character.codePointAt(0)!);
+  const step = (index: number) => modulus ? (values[index] - values[index - 1] + modulus) % modulus : values[index] - values[index - 1];
+  const first = step(1);
+  return (first === 1 || first === (modulus ? modulus - 1 : -1)) && values.every((_, index) => index === 0 || step(index) === first);
+}
+/** Extra checks for a passphrase being chosen now. Existing vaults still unlock with whatever they were created with. */
+function chosenPassphrase(value: string) {
+  passphrase(value);
+  const characters = Array.from(value);
+  const distinct = new Set(characters).size;
+  if (distinct === 1) throw new Error('Passphrase cannot be one character repeated. Use a longer phrase of several words.');
+  if (distinct < 5) throw new Error('Passphrase needs at least 5 different characters. Use a longer phrase of several words.');
+  if (isSimpleSequence(characters)) {
+    throw new Error('Passphrase cannot be a simple sequence such as abcdefghijkl or 123456789012. Use a longer phrase of several words.');
+  }
+}
 async function derive(value: string, kdf: VaultFile['kdf']) {
   passphrase(value);
   const raw = encoder.encode(value);
@@ -129,11 +151,12 @@ export async function sealData(file: VaultFile, key: Uint8Array<ArrayBuffer>, da
   } finally { plain.fill(0); }
 }
 async function rewrap(file: VaultFile, key: Uint8Array<ArrayBuffer>, nextPassphrase: string): Promise<VaultFile> {
+  chosenPassphrase(nextPassphrase);
   const kdf: VaultFile['kdf'] = { name: 'PBKDF2', hash: 'SHA-256', iterations: KDF_ITERATIONS, salt: hex(random(16)) };
   return { ...file, kdf, wrappedKey: await encrypt(await derive(nextPassphrase, kdf), key, aad(file, 'key', kdf)) };
 }
 export async function createVault(value: string): Promise<{ file: VaultFile; session: VaultSession }> {
-  passphrase(value);
+  chosenPassphrase(value);
   const key = random(32);
   try {
     const header = { version: 1 as const, id: hex(random(16)), cipher: 'AES-256-GCM' as const };
@@ -155,24 +178,83 @@ export async function rotatePassphrase(file: VaultFile, session: VaultSession, s
   await openPayload(file, session.key);
   return rewrap(file, session.key, secret);
 }
+const SHARE_FORMAT_V1 = 'vmrecovery-1';
+const SHARE_FORMAT_V2 = 'vmrecovery-2';
+/** Issues five shares of the data key (any three recover it) as one set. Each carries the vault ID, a set ID and a checksum. */
 export function recoveryShares(file: VaultFile, session: VaultSession): string[] {
-  return splitSecret(session.key, 5, 3).map((share) => `vmrecovery-1:${file.id}:3:${share}`);
+  const setId = hex(random(4));
+  return splitSecret(session.key, 5, 3).map((share) => {
+    const body = `${SHARE_FORMAT_V2}:${file.id}:3:${setId}:${share}`;
+    return `${body}:${checksumHex(body)}`;
+  });
+}
+interface ReadShare { line: number; raw: string; setId?: string }
+function readShare(text: string, line: number, file: VaultFile): ReadShare {
+  const name = `Recovery share on line ${line}`;
+  const parts = text.trim().split(':');
+  const version = parts[0];
+  if (!((version === SHARE_FORMAT_V1 && parts.length === 4) || (version === SHARE_FORMAT_V2 && parts.length === 6))) {
+    throw new Error(`${name} is not in a recognized format, so it cannot belong to this vault. Copy the whole line, starting with ${SHARE_FORMAT_V2}.`);
+  }
+  if (parts[2] !== '3') throw new Error(`${name} is not part of a 3-of-5 set.`);
+  const current = version === SHARE_FORMAT_V2;
+  const checksumOk = !current || checksumHex(parts.slice(0, 5).join(':')) === parts[5];
+  if (parts[1] !== file.id) {
+    throw new Error(`${name} belongs to a different vault${checksumOk ? '' : ' or has a typo in its vault ID'}. It may also have been issued before this vault was re-keyed. Use shares issued for this vault.`);
+  }
+  if (!checksumOk) throw new Error(`${name} has a typo: its checksum does not match. Compare it with your saved copy, character by character.`);
+  const setId = current ? parts[3] : undefined;
+  if (current && !/^[0-9a-f]{8}$/.test(setId!)) throw new Error(`${name} has a damaged set ID.`);
+  const raw = current ? parts[4] : parts[3];
+  try { parseShare(raw, 32); } catch { throw new Error(`${name} is damaged: its share data is not valid. Check it against your saved copy.`); }
+  return { line, raw, setId };
+}
+function checkSet(shares: ReadShare[]) {
+  const mixed = shares.find((share) => (share.setId === undefined) !== (shares[0].setId === undefined));
+  if (mixed) {
+    const older = mixed.setId === undefined ? mixed : shares[0];
+    throw new Error(`Recovery share on line ${older.line} uses the older format without a set ID, so it cannot be combined with shares that have one. Use three shares from one set.`);
+  }
+  const counts = new Map<string | undefined, number>();
+  for (const share of shares) counts.set(share.setId, (counts.get(share.setId) ?? 0) + 1);
+  const majority = [...counts.entries()].sort((left, right) => right[1] - left[1])[0][0];
+  const odd = shares.find((share) => share.setId !== majority);
+  if (odd) throw new Error(`Recovery share on line ${odd.line} is from set ${odd.setId}, but the other shares are from set ${majority}. Use three shares from one set.`);
+  const seen = new Map<string, number>();
+  for (const share of shares) {
+    const index = share.raw.slice(8, 10);
+    const first = seen.get(index);
+    if (first !== undefined) throw new Error(`Duplicate recovery share: line ${share.line} repeats line ${first}. Enter three different shares.`);
+    seen.set(index, share.line);
+  }
 }
 export async function recoverVault(value: VaultFile, shares: string[], nextPassphrase: string): Promise<{ file: VaultFile; session: VaultSession }> {
   const file = parseVault(JSON.stringify(value));
-  passphrase(nextPassphrase);
+  chosenPassphrase(nextPassphrase);
   if (shares.length < 3 || shares.length > 5) throw new Error('Enter 3 to 5 distinct recovery shares.');
-  const rawShares = shares.map((share) => {
-    const parts = share.trim().split(':');
-    if (parts.length !== 4 || parts[0] !== 'vmrecovery-1' || parts[1] !== file.id || parts[2] !== '3') throw new Error('Each recovery share must belong to this vault and its 3-of-5 scheme.');
-    parseShare(parts[3], 32);
-    return parts[3];
-  });
-  const key = combineShares(rawShares) as Uint8Array<ArrayBuffer>;
+  const read = shares.map((share, index) => readShare(share, index + 1, file));
+  checkSet(read);
+  const key = combineShares(read.map((share) => share.raw)) as Uint8Array<ArrayBuffer>;
   try {
     const data = await openPayload(file, key);
     return { file: await rewrap(file, key, nextPassphrase), session: { key, data } };
-  } catch { key.fill(0); throw new Error('Recovery shares do not unlock this encrypted vault. Check the shares and file.'); }
+  } catch { key.fill(0); throw new Error('Recovery shares do not unlock this encrypted vault. Check the shares and file. If they came from different sets, use three shares from one set.'); }
+}
+/**
+ * Makes a new data key, re-encrypts every entry under it and wraps it with the given passphrase. The result gets a
+ * new vault ID. Recovery shares and backup files made earlier hold the old key, so they no longer open this vault,
+ * although they still open the contents they were made from. The caller saves the result in one revision-checked write.
+ */
+export async function rekeyVault(file: VaultFile, session: VaultSession, nextPassphrase: string): Promise<{ file: VaultFile; session: VaultSession }> {
+  chosenPassphrase(nextPassphrase);
+  await openPayload(file, session.key);
+  const key = random(32);
+  try {
+    const header = { version: 1 as const, id: hex(random(16)), cipher: 'AES-256-GCM' as const };
+    const data = payload(session.data);
+    const next = await sealData(await rewrap({ ...header } as VaultFile, key, nextPassphrase), key, data);
+    return { file: next, session: { key, data } };
+  } catch (error) { key.fill(0); throw error; }
 }
 export function putEntry(data: Payload, path: string, value: string, id?: string): Payload {
   const entry: Entry = { id: id ?? hex(random(16)), path: path.trim(), value, updatedAt: new Date().toISOString() };

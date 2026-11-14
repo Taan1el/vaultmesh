@@ -132,3 +132,20 @@ export function combineShares(shares: string[]): Uint8Array {
 
   return result;
 }
+
+const CRC_TABLE = (() => {
+  const table = new Uint32Array(256);
+  for (let n = 0; n < 256; n++) {
+    let c = n;
+    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+    table[n] = c >>> 0;
+  }
+  return table;
+})();
+
+/** CRC-32 of UTF-8 text as 8 lowercase hex digits. Catches a typo in a copied share; it is not a security check. */
+export function checksumHex(text: string): string {
+  let crc = 0xffffffff;
+  for (const byte of new TextEncoder().encode(text)) crc = CRC_TABLE[(crc ^ byte) & 0xff] ^ (crc >>> 8);
+  return ((crc ^ 0xffffffff) >>> 0).toString(16).padStart(8, '0');
+}
