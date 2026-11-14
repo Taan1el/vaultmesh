@@ -66,6 +66,35 @@ describe('local encrypted notebook', () => {
     fireEvent(document, new Event('visibilitychange'));
     expect(screen.getByRole('heading', { name: 'Unlock encrypted vault' })).toBeInTheDocument();
   });
+  it('keeps the pending clipboard clear when the vault locks, then clears at the scheduled time', async () => {
+    vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible'); vi.spyOn(document, 'hasFocus').mockReturnValue(true);
+    let text = ''; const writeText = vi.fn(async (next: string) => { text = next; });
+    vi.stubGlobal('navigator', Object.assign(Object.create(navigator), { clipboard: { writeText, readText: async () => text } }));
+    await open(); await create(); await add();
+    fireEvent.click(screen.getByRole('button', { name: 'Inspect synthetic/path' }));
+    vi.useFakeTimers(); fireEvent.click(screen.getByRole('button', { name: 'Copy value' })); await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(screen.getByText(/^Copied\./)).toBeInTheDocument();
+    expect(text).toBe('synthetic plaintext');
+    fireEvent.click(screen.getByRole('button', { name: 'Lock vault' }));
+    expect(screen.getByRole('heading', { name: 'Unlock encrypted vault' })).toBeInTheDocument();
+    expect(screen.getByText(/stays on the clipboard until its 30 second clear/)).toBeInTheDocument();
+    expect(writeText).toHaveBeenCalledTimes(1); expect(text).toBe('synthetic plaintext');
+    await act(async () => { await vi.advanceTimersByTimeAsync(29999); }); expect(text).toBe('synthetic plaintext');
+    await act(async () => { await vi.advanceTimersByTimeAsync(1); }); expect(text).toBe('');
+    vi.useRealTimers();
+  });
+  it('shows a notice when a due clipboard clear is rejected on a visible page', async () => {
+    vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible'); vi.spyOn(document, 'hasFocus').mockReturnValue(true);
+    const writeText = vi.fn(async (next: string) => { if (!next) throw new Error('Denied.'); });
+    vi.stubGlobal('navigator', Object.assign(Object.create(navigator), { clipboard: { writeText } }));
+    await open(); await create(); await add();
+    fireEvent.click(screen.getByRole('button', { name: 'Inspect synthetic/path' }));
+    vi.useFakeTimers(); fireEvent.click(screen.getByRole('button', { name: 'Copy value' })); await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(screen.getByText(/^Copied\./)).toBeInTheDocument();
+    await act(async () => { await vi.advanceTimersByTimeAsync(30000); });
+    expect(screen.getByRole('alert')).toHaveTextContent('The clipboard could not be cleared');
+    vi.useRealTimers();
+  });
   it('retains saved ciphertext after wrong password or failed writes', async () => {
     const created = await createVault(phrase); await open(created.file);
     change('Passphrase', 'wrong synthetic phrase'); fireEvent.click(screen.getByRole('button', { name: 'Unlock vault' }));

@@ -49,7 +49,7 @@ export function LocalVault() {
     liveSession.current?.key.fill(0); liveSession.current = null;
     setSession(null); setPath(''); setValue(''); setEditing(undefined); setRevealed(null);
     setPass(''); setNextPass(''); setConfirmation(''); setShares([]); setRecovery(''); setRecovering(false); setAudit([]);
-    void clipboard.current?.clear(); setStatus('Vault locked. Decrypted contents and recovery shares were cleared from this page.');
+    setStatus(`Vault locked. The key was zeroed and decrypted entries, form fields, recovery shares and the activity list were removed from this page.${clipboard.current?.pending ? ' A copied value stays on the clipboard until its 30 second clear.' : ''}`);
   }, []);
 
   useEffect(() => {
@@ -59,7 +59,7 @@ export function LocalVault() {
       if (active) { revision.current = saved.revision; setFile(restored); }
     }).catch((reason) => { if (active) { setBlocked(true); setError(`Saved vault could not be loaded. Writes are blocked to preserve it. ${message(reason)}`); } })
       .finally(() => { if (active) setLoaded(true); });
-    return () => { active = false; epoch.current += 1; liveSession.current?.key.fill(0); liveSession.current = null; void clipboard.current?.clear(); };
+    return () => { active = false; epoch.current += 1; liveSession.current?.key.fill(0); liveSession.current = null; };
   }, []);
 
   useEffect(() => {
@@ -131,8 +131,8 @@ export function LocalVault() {
   }
   async function copy(text: string) {
     if (!navigator.clipboard) throw new Error('Clipboard is unavailable. Select and copy the visible value manually.');
-    clipboard.current ??= new ClipboardGuard(navigator.clipboard, () => setError('Clipboard could not be cleared. Clear it manually.'));
-    await clipboard.current.copy(text); setStatus('Copied. Clipboard clearing is scheduled in 30 seconds.');
+    clipboard.current ??= new ClipboardGuard(navigator.clipboard, () => setError('The clipboard could not be cleared. Clear it manually.'));
+    await clipboard.current.copy(text); setStatus('Copied. The clipboard is cleared after 30 seconds, even if the vault locks. If this tab is hidden then, the clear runs when you return to it.');
   }
   return <div className="frame local-vault">
     <aside className="rail"><div className="rail-brand"><h1 className="brand-name">VaultMesh</h1><p className="brand-subtitle">An encrypted notebook for secrets on this device.</p></div>
@@ -170,7 +170,7 @@ export function LocalVault() {
           </section>
           <section className="panel" aria-labelledby="entry-title"><div className="panel-heading"><h3 id="entry-title">{editing ? 'Edit secret' : 'Add secret'}</h3></div><form onSubmit={(event) => void saveEntry(event)}><label>Secret path<input value={path} required maxLength={200} autoComplete="off" onChange={(event) => setPath(event.target.value)} disabled={isDisabled || blocked} /></label><label>Secret value<textarea aria-label="Secret value" value={value} maxLength={65536} rows={4} autoComplete="off" spellCheck={false} onChange={(event) => setValue(event.target.value)} disabled={isDisabled || blocked} /></label><div className="button-row"><button type="submit" className="btn btn-primary" disabled={isDisabled || blocked}><Plus size={16} aria-hidden="true" />Save secret</button>{editing && <button className="btn" type="button" onClick={() => { setEditing(undefined); setPath(''); setValue(''); }}>Cancel edit</button>}</div></form></section>
         </>}
-        {session && section === 'Status' && <section className="panel" aria-labelledby="lock-title"><div className="panel-heading"><h3 id="lock-title">Lock settings</h3></div><div className="field"><label htmlFor="local-idle-minutes">Lock after inactivity</label><select id="local-idle-minutes" value={idleMinutes} onChange={(event) => setIdleMinutes(Number(event.target.value))}><option value={1}>1 minute</option><option value={5}>5 minutes</option><option value={15}>15 minutes</option></select></div><label className="check"><input type="checkbox" checked={hideLock} onChange={(event) => setHideLock(event.target.checked)} />Lock when this tab is hidden</label><p className="hint">Settings apply to this open page. Locking clears decrypted values, forms and recovery shares. Clipboard clearing depends on browser permission.</p></section>}
+        {session && section === 'Status' && <section className="panel" aria-labelledby="lock-title"><div className="panel-heading"><h3 id="lock-title">Lock settings</h3></div><div className="field"><label htmlFor="local-idle-minutes">Lock after inactivity</label><select id="local-idle-minutes" value={idleMinutes} onChange={(event) => setIdleMinutes(Number(event.target.value))}><option value={1}>1 minute</option><option value={5}>5 minutes</option><option value={15}>15 minutes</option></select></div><label className="check"><input type="checkbox" checked={hideLock} onChange={(event) => setHideLock(event.target.checked)} />Lock when this tab is hidden</label><p className="hint">Settings apply to this open page. Locking zeroes the key held in memory and removes decrypted entries, form fields, recovery shares and the activity list from this page. Text the browser already rendered can stay in memory until it is garbage collected. A copied value is cleared from the clipboard 30 seconds after copying, even after a lock. That clear needs this tab to be visible and focused, so it waits until you return.</p></section>}
         {file && section === 'Status' && <section className="panel" aria-labelledby="delete-vault-title"><div className="panel-heading"><h3 id="delete-vault-title">Saved vault</h3></div><p className="panel-note">Export an encrypted backup before deleting the saved copy. Exported files are kept separately.</p><button className="btn btn-danger" type="button" disabled={isDisabled || blocked} onClick={() => {
           if (!window.confirm('Delete the saved encrypted vault from this browser? Keep an exported backup first. This cannot be undone.')) return;
           void run(async (operation) => { await persist(null, operation); lock(); setChanges(false); setStatus('Saved encrypted vault deleted. You can create or import another vault.'); });
