@@ -8,6 +8,7 @@ import './local.css';
 
 const sections = ['Status', 'Secrets', 'Keys', 'Leases', 'Audit'] as const;
 type Section = typeof sections[number];
+function count(total: number) { return `${total} ${total === 1 ? 'entry' : 'entries'}`; }
 function message(error: unknown) { return error instanceof Error ? error.message : 'The operation could not finish.'; }
 
 export function LocalVault() {
@@ -182,21 +183,30 @@ export function LocalVault() {
         {section === 'Leases' && <section className="panel"><h3>Local notebook</h3><p className="hint">This workspace does not issue temporary credentials. Sample data includes the server lease examples.</p></section>}
         {section === 'Audit' && <section className="panel"><h3>Session activity</h3><p className="hint">Only actions from this unlocked session. This list is cleared on lock and is not a permanent or tamper-evident audit trail.</p><ul className="local-audit">{audit.map((item, index) => <li key={index} className="mono">{item}</li>)}</ul></section>}
       </div>
-      {dialog && <ImportVault returnFocus={opener} close={() => setDialog(false)} importFile={async (imported) => {
+      {dialog && <ImportVault returnFocus={opener} close={() => setDialog(false)} importFile={async (imported, secret) => {
         const operation = epoch.current;
         if (blocked) throw new Error('Reload saved vault before importing over it.');
         if (imported.size > MAX_VAULT_BYTES) throw new Error(`${imported.name}: file must be at most 4 MiB.`);
         const incoming = parseVault(await imported.text(), imported.name);
-        if (file && !window.confirm('Replace this saved encrypted vault? Export a backup first. This cannot be undone.')) return false;
-        await persist(incoming, operation); lock(); setSection('Status'); setStatus('Encrypted vault imported. Unlock it with its passphrase or recovery shares.'); return true;
+        if (!secret) throw new Error(`Enter the passphrase for ${imported.name}. It is used once to check that the file opens.`);
+        let proof: VaultSession;
+        try { proof = await unlockVault(incoming, secret); }
+        catch (reason) { throw new Error(`${imported.name} did not open. ${message(reason)} Your saved vault was not changed.`); }
+        const incomingCount = proof.data.entries.length; proof.key.fill(0);
+        if (file) {
+          const saved = session ? `the saved vault (${count(session.data.entries.length)})` : 'the saved vault, which is locked so its entries cannot be counted,';
+          if (!window.confirm(`Replace ${saved} with ${imported.name} (${count(incomingCount)})? Export a backup first. This cannot be undone.`)) return false;
+        }
+        await persist(incoming, operation); lock(); setSection('Status'); setStatus(`Encrypted vault imported with ${count(incomingCount)}. Unlock it with its passphrase or recovery shares.`); return true;
       }} />}
     </main>
   </div>;
 }
 
-function ImportVault({ close, importFile, returnFocus }: { close: () => void; importFile: (file: File) => Promise<boolean>; returnFocus: RefObject<HTMLButtonElement | null> }) {
+function ImportVault({ close, importFile, returnFocus }: { close: () => void; importFile: (file: File, passphrase: string) => Promise<boolean>; returnFocus: RefObject<HTMLButtonElement | null> }) {
   const root = useRef<HTMLDivElement>(null);
   const [selected, setSelected] = useState<File | null>(null);
+  const [secret, setSecret] = useState('');
   const [error, setError] = useState(''); const [busy, setBusy] = useState(false);
   useEffect(() => {
     const restoreOverflow = document.body.style.overflow; document.body.style.overflow = 'hidden'; root.current?.focus();
@@ -215,8 +225,8 @@ function ImportVault({ close, importFile, returnFocus }: { close: () => void; im
       else if (!event.shiftKey && (document.activeElement === last || document.activeElement === root.current)) { event.preventDefault(); first.focus(); }
     }
   }}><div className="panel-heading"><h3 id="import-title">Import encrypted vault</h3><button type="button" className="btn-icon" disabled={busy} aria-label="Close import" onClick={close}><X size={16} aria-hidden="true" /></button></div>
-    <form onSubmit={(event) => { event.preventDefault(); if (!selected) { setError('Choose an encrypted vault JSON file.'); return; } setBusy(true); setError(''); void importFile(selected).then((imported) => { if (imported) close(); }).catch((reason) => setError(message(reason))).finally(() => setBusy(false)); }}>
-      <div className="local-modal-scroll" role="region" tabIndex={0} aria-label="Encrypted vault import"><p className="panel-note">Choose a version 1 encrypted vault JSON file, up to 4 MiB. Import never unlocks or uploads it.</p><label>Encrypted vault JSON<input type="file" accept=".json,application/json" disabled={busy} onChange={(event) => setSelected(event.target.files?.[0] ?? null)} /></label>{error && <p className="danger-text" role="alert">{error}</p>}</div>
+    <form onSubmit={(event) => { event.preventDefault(); if (!selected) { setError('Choose an encrypted vault JSON file.'); return; } setBusy(true); setError(''); void importFile(selected, secret).then((imported) => { if (imported) close(); }).catch((reason) => setError(message(reason))).finally(() => setBusy(false)); }}>
+      <div className="local-modal-scroll" role="region" tabIndex={0} aria-label="Encrypted vault import"><p className="panel-note">Choose a version 1 encrypted vault JSON file, up to 4 MiB, and enter its passphrase. The file is opened once in this page to prove it works before it replaces the saved vault. Nothing is uploaded, and the vault stays locked afterwards.</p><label>Encrypted vault JSON<input type="file" accept=".json,application/json" disabled={busy} onChange={(event) => setSelected(event.target.files?.[0] ?? null)} /></label><label>Passphrase for this file<input type="password" autoComplete="off" maxLength={1024} value={secret} disabled={busy} onChange={(event) => setSecret(event.target.value)} /></label>{error && <p className="danger-text" role="alert">{error}</p>}</div>
       <div className="button-row"><button className="btn" type="button" disabled={busy} onClick={close}>Cancel</button><button className="btn btn-primary" type="submit" disabled={busy}>Import vault</button></div>
     </form></div></div>;
 }

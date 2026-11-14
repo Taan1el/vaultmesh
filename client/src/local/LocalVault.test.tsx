@@ -3,7 +3,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { LocalVault } from './LocalVault';
-import { createVault, serializeVault, type VaultFile } from './vault';
+import { createVault, putEntry, sealData, serializeVault, type VaultFile } from './vault';
 import { axe } from '../test/axe';
 
 const storage = vi.hoisted(() => ({ load: vi.fn(), save: vi.fn(), download: vi.fn() }));
@@ -118,6 +118,53 @@ describe('local encrypted notebook', () => {
     expect(await within(dialog).findByRole('alert')).toHaveTextContent('broken.json: JSON'); expect(storage.save).not.toHaveBeenCalled();
     await user.tab(); expect(dialog.contains(document.activeElement)).toBe(true); await user.keyboard('{Escape}');
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument(); expect(screen.getByRole('button', { name: 'Import vault' })).toHaveFocus();
+  });
+  async function backup(entries: number, passphrase = 'imported synthetic phrase') {
+    const created = await createVault(passphrase); let data = created.session.data;
+    for (let index = 0; index < entries; index += 1) data = putEntry(data, `imported/path-${index}`, `imported value ${index}`);
+    const file = await sealData(created.file, created.session.key, data); created.session.key.fill(0);
+    const upload = new File([serializeVault(file)], 'backup.json', { type: 'application/json' });
+    Object.defineProperty(upload, 'text', { value: async () => serializeVault(file) });
+    return { file, upload };
+  }
+  async function importDialog(upload: File, passphrase: string) {
+    const user = userEvent.setup(); await user.click(screen.getByRole('button', { name: 'Import vault' }));
+    const dialog = screen.getByRole('dialog', { name: 'Import encrypted vault' });
+    await user.upload(within(dialog).getByLabelText('Encrypted vault JSON'), upload);
+    if (passphrase) await user.type(within(dialog).getByLabelText('Passphrase for this file'), passphrase);
+    await user.click(within(dialog).getByRole('button', { name: 'Import vault' })); return { user, dialog };
+  }
+  it('keeps the saved vault when the imported file does not open with the given passphrase', async () => {
+    const saved = await createVault(phrase); const { upload } = await backup(2); const confirm = vi.spyOn(window, 'confirm');
+    await open(saved.file); const { dialog } = await importDialog(upload, 'wrong synthetic phrase');
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('Your saved vault was not changed');
+    expect(storage.save).not.toHaveBeenCalled(); expect(confirm).not.toHaveBeenCalled();
+    saved.session.key.fill(0);
+  });
+  it('asks for the passphrase before replacing anything', async () => {
+    const saved = await createVault(phrase); const { upload } = await backup(1);
+    await open(saved.file); const { dialog } = await importDialog(upload, '');
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('Enter the passphrase for backup.json');
+    expect(storage.save).not.toHaveBeenCalled(); saved.session.key.fill(0);
+  });
+  it('states how many entries replace how many, and replaces only after confirmation', async () => {
+    const { upload, file: incoming } = await backup(3); await open(); await create(); await add();
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValueOnce(true);
+    const { user, dialog } = await importDialog(upload, 'imported synthetic phrase');
+    await waitFor(() => expect(confirm).toHaveBeenCalledTimes(1));
+    expect(confirm.mock.calls[0][0]).toContain('the saved vault (1 entry) with backup.json (3 entries)');
+    expect(storage.save).toHaveBeenCalledTimes(2); expect(dialog).toBeInTheDocument();
+    await user.click(within(dialog).getByRole('button', { name: 'Import vault' }));
+    await screen.findByText(/^Encrypted vault imported with 3 entries\./);
+    expect(storage.save.mock.calls[2][0]).toEqual(incoming); expect(storage.save.mock.calls[2][1]).toEqual({ expectedRevision: 2 });
+    expect(screen.getByRole('heading', { name: 'Unlock encrypted vault' })).toBeInTheDocument();
+  });
+  it('says the saved entries cannot be counted while the saved vault is locked', async () => {
+    const saved = await createVault(phrase); const { upload } = await backup(0);
+    await open(saved.file); const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    await importDialog(upload, 'imported synthetic phrase'); await waitFor(() => expect(confirm).toHaveBeenCalledTimes(1));
+    expect(confirm.mock.calls[0][0]).toContain('which is locked so its entries cannot be counted, with backup.json (0 entries)');
+    saved.session.key.fill(0);
   });
   it('does not delete an entry when confirmation is cancelled', async () => {
     await open(); await create(); await add(); vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValueOnce(true);
