@@ -242,7 +242,8 @@ describe('App', () => {
     const dialog = await screen.findByRole('dialog', { name: 'Test API key' });
     expect(within(dialog).getByText(/"token": "example-token-not-real"/)).toBeInTheDocument();
     expect(within(dialog).getByText(/Access: No approval gate matched this path/)).toBeInTheDocument();
-    expect(within(dialog).getByRole('button', { name: 'Close' })).toHaveFocus();
+    // The drawer moves focus in an effect that can run after the dialog is first in the DOM.
+    await waitFor(() => expect(within(dialog).getByRole('button', { name: 'Close' })).toHaveFocus());
     expect(fake.api.readSecret).toHaveBeenCalledWith('secret/test/api', undefined);
 
     fireEvent.keyDown(document, { key: 'Escape' });
