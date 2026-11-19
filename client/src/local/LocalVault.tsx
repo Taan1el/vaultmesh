@@ -7,6 +7,9 @@ import { createVault, MAX_VAULT_BYTES, parseVault, putEntry, recoverVault, recov
 import './local.css';
 
 const sections = ['Status', 'Secrets', 'Keys', 'Audit'] as const;
+/** How an imported file proves it opens: its own passphrase, or recovery shares plus a new passphrase for it. */
+type ImportProof = { kind: 'passphrase'; secret: string } | { kind: 'shares'; shares: string[]; next: string; confirmation: string };
+function shareLines(text: string) { return text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean); }
 type Section = typeof sections[number];
 function count(total: number) { return `${total} ${total === 1 ? 'entry' : 'entries'}`; }
 function message(error: unknown) { return error instanceof Error ? error.message : 'The operation could not finish.'; }
@@ -163,7 +166,7 @@ export function LocalVault() {
             <button className="btn btn-primary" disabled={isDisabled || blocked} type="submit">{busy ? 'Working' : file ? 'Unlock vault' : 'Create vault'}</button></form>
           {file && <><button type="button" className="link-btn" disabled={isDisabled || blocked} onClick={() => setRecovering(!recovering)}>Recover with shares</button>{recovering && <form onSubmit={(event) => { event.preventDefault(); void run(async (operation) => {
             if (nextPass !== confirmation) throw new Error('Passphrase confirmation does not match.');
-            const restored = await recoverVault(file, recovery.split(/\r?\n/).map((line) => line.trim()).filter(Boolean), nextPass);
+            const restored = await recoverVault(file, shareLines(recovery), nextPass);
             try { await persist(restored.file, operation); adopt(restored.session); setPass(''); setRecovery(''); setNextPass(''); setConfirmation(''); setRecovering(false); setStatus('Vault recovered with a new passphrase. Export a fresh backup.'); } catch (reason) { restored.session.key.fill(0); throw reason; }
           }); }}><label>Recovery shares, one per line<textarea aria-label="Recovery shares, one per line" value={recovery} rows={5} autoComplete="off" spellCheck={false} onChange={(event) => setRecovery(event.target.value)} /></label><label>New recovery passphrase<input type="password" minLength={12} maxLength={1024} required autoComplete="new-password" value={nextPass} onChange={(event) => setNextPass(event.target.value)} /></label><label>Confirm recovery passphrase<input type="password" required autoComplete="new-password" value={confirmation} onChange={(event) => setConfirmation(event.target.value)} /></label><button className="btn btn-primary" type="submit" disabled={isDisabled || blocked}>Recover vault</button></form>}</>}
         </section>}
@@ -193,30 +196,49 @@ export function LocalVault() {
         </>}
         {section === 'Audit' && <section className="panel"><h3>Session activity</h3><p className="hint">Only actions from this unlocked session. This list is cleared on lock and is not a permanent or tamper-evident audit trail.</p><ul className="local-audit">{audit.map((item, index) => <li key={index} className="mono">{item}</li>)}</ul></section>}
       </div>
-      {dialog && <ImportVault returnFocus={opener} close={() => setDialog(false)} importFile={async (imported, secret) => {
+      {dialog && <ImportVault returnFocus={opener} close={() => setDialog(false)} importFile={async (imported, proof) => {
         const operation = epoch.current;
         if (blocked) throw new Error('Reload saved vault before importing over it.');
         if (imported.size > MAX_VAULT_BYTES) throw new Error(`${imported.name}: file must be at most 4 MiB.`);
         const incoming = parseVault(await imported.text(), imported.name);
-        if (!secret) throw new Error(`Enter the passphrase for ${imported.name}. It is used once to check that the file opens.`);
-        let proof: VaultSession;
-        try { proof = await unlockVault(incoming, secret); }
-        catch (reason) { throw new Error(`${imported.name} did not open. ${message(reason)} Your saved vault was not changed.`); }
-        const incomingCount = proof.data.entries.length; proof.key.fill(0);
+        let stored = incoming; let incomingCount: number;
+        if (proof.kind === 'passphrase') {
+          if (!proof.secret) throw new Error(`Enter the passphrase for ${imported.name}. It is used once to check that the file opens.`);
+          let opened: VaultSession;
+          try { opened = await unlockVault(incoming, proof.secret); }
+          catch (reason) { throw new Error(`${imported.name} did not open. ${message(reason)} Your saved vault was not changed.`); }
+          incomingCount = opened.data.entries.length; opened.key.fill(0);
+        } else {
+          if (!proof.shares.length) throw new Error(`Enter three recovery shares for ${imported.name}, one per line.`);
+          if (proof.next !== proof.confirmation) throw new Error('New passphrase confirmation does not match. Your saved vault was not changed.');
+          let restored: { file: VaultFile; session: VaultSession };
+          try { restored = await recoverVault(incoming, proof.shares, proof.next); }
+          catch (reason) { throw new Error(`${message(reason)} Your saved vault was not changed.`); }
+          // The shares rebuild the data key; the file is saved wrapped with the new passphrase and stays locked.
+          incomingCount = restored.session.data.entries.length; restored.session.key.fill(0); stored = restored.file;
+        }
         if (file) {
           const saved = session ? `the saved vault (${count(session.data.entries.length)})` : 'the saved vault, which is locked so its entries cannot be counted,';
           if (!window.confirm(`Replace ${saved} with ${imported.name} (${count(incomingCount)})? Export a backup first. This cannot be undone.`)) return false;
         }
-        await persist(incoming, operation); lock(); setSection('Status'); setStatus(`Encrypted vault imported with ${count(incomingCount)}. Unlock it with its passphrase or recovery shares.`); return true;
+        await persist(stored, operation); lock(); setSection('Status');
+        setStatus(proof.kind === 'passphrase'
+          ? `Encrypted vault imported with ${count(incomingCount)}. Unlock it with its passphrase or recovery shares.`
+          : `Encrypted vault imported with ${count(incomingCount)} using recovery shares. Unlock it with the new passphrase and export a fresh backup. The same shares still recover it.`);
+        return true;
       }} />}
     </main>
   </div>;
 }
 
-function ImportVault({ close, importFile, returnFocus }: { close: () => void; importFile: (file: File, passphrase: string) => Promise<boolean>; returnFocus: RefObject<HTMLButtonElement | null> }) {
+function ImportVault({ close, importFile, returnFocus }: { close: () => void; importFile: (file: File, proof: ImportProof) => Promise<boolean>; returnFocus: RefObject<HTMLButtonElement | null> }) {
   const root = useRef<HTMLDivElement>(null);
   const [selected, setSelected] = useState<File | null>(null);
+  const [mode, setMode] = useState<ImportProof['kind']>('passphrase');
   const [secret, setSecret] = useState('');
+  const [shares, setShares] = useState('');
+  const [next, setNext] = useState('');
+  const [confirmation, setConfirmation] = useState('');
   const [error, setError] = useState(''); const [busy, setBusy] = useState(false);
   useEffect(() => {
     const restoreOverflow = document.body.style.overflow; document.body.style.overflow = 'hidden'; root.current?.focus();
@@ -228,15 +250,27 @@ function ImportVault({ close, importFile, returnFocus }: { close: () => void; im
   return <div className="local-modal-backdrop"><div className="panel local-modal" role="dialog" aria-modal="true" aria-labelledby="import-title" tabIndex={-1} ref={root} onKeyDown={(event) => {
     if (event.key === 'Escape' && !busy) { event.preventDefault(); close(); }
     if (event.key === 'Tab') {
-      const controls = Array.from(root.current?.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), [tabindex="0"]') ?? []);
+      const controls = Array.from(root.current?.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex="0"]') ?? []);
       const first = controls[0]; const last = controls.at(-1);
       if (!first || !last) { event.preventDefault(); return; }
       if (event.shiftKey && (document.activeElement === first || document.activeElement === root.current)) { event.preventDefault(); last.focus(); }
       else if (!event.shiftKey && (document.activeElement === last || document.activeElement === root.current)) { event.preventDefault(); first.focus(); }
     }
   }}><div className="panel-heading"><h3 id="import-title">Import encrypted vault</h3><button type="button" className="btn-icon" disabled={busy} aria-label="Close import" onClick={close}><X size={16} aria-hidden="true" /></button></div>
-    <form onSubmit={(event) => { event.preventDefault(); if (!selected) { setError('Choose an encrypted vault JSON file.'); return; } setBusy(true); setError(''); void importFile(selected, secret).then((imported) => { if (imported) close(); }).catch((reason) => setError(message(reason))).finally(() => setBusy(false)); }}>
-      <div className="local-modal-scroll" role="region" tabIndex={0} aria-label="Encrypted vault import"><p className="panel-note">Choose a version 1 encrypted vault JSON file, up to 4 MiB, and enter its passphrase. The file is opened once in this page to prove it works before it replaces the saved vault. Nothing is uploaded, and the vault stays locked afterwards.</p><label>Encrypted vault JSON<input type="file" accept=".json,application/json" disabled={busy} onChange={(event) => setSelected(event.target.files?.[0] ?? null)} /></label><label>Passphrase for this file<input type="password" autoComplete="off" maxLength={1024} value={secret} disabled={busy} onChange={(event) => setSecret(event.target.value)} /></label>{error && <p className="danger-text" role="alert">{error}</p>}</div>
+    <form onSubmit={(event) => {
+      event.preventDefault(); if (!selected) { setError('Choose an encrypted vault JSON file.'); return; }
+      const proof: ImportProof = mode === 'passphrase' ? { kind: 'passphrase', secret } : { kind: 'shares', shares: shareLines(shares), next, confirmation };
+      setBusy(true); setError(''); void importFile(selected, proof).then((imported) => { if (imported) close(); }).catch((reason) => setError(message(reason))).finally(() => setBusy(false));
+    }}>
+      <div className="local-modal-scroll" role="region" tabIndex={0} aria-label="Encrypted vault import"><p className="panel-note">Choose a version 1 encrypted vault JSON file, up to 4 MiB, and open it with its passphrase or with three recovery shares from one set. The file is opened once in this page to prove it works before it replaces the saved vault. Nothing is uploaded, and the vault stays locked afterwards.</p><label>Encrypted vault JSON<input type="file" accept=".json,application/json" disabled={busy} onChange={(event) => setSelected(event.target.files?.[0] ?? null)} /></label>
+        <label>Open this file with<select value={mode} disabled={busy} onChange={(event) => { setMode(event.target.value as ImportProof['kind']); setError(''); }}><option value="passphrase">Its passphrase</option><option value="shares">Recovery shares and a new passphrase</option></select></label>
+        {mode === 'passphrase'
+          ? <label>Passphrase for this file<input type="password" autoComplete="off" maxLength={1024} value={secret} disabled={busy} onChange={(event) => setSecret(event.target.value)} /></label>
+          : <><label>Recovery shares for this file, one per line<textarea value={shares} rows={5} autoComplete="off" spellCheck={false} disabled={busy} onChange={(event) => setShares(event.target.value)} /></label>
+            <p className="hint">Use three shares from one set. The file is saved wrapped with the new passphrase, and the same shares keep recovering it.</p>
+            <label>New passphrase for this file<input type="password" autoComplete="new-password" maxLength={1024} value={next} disabled={busy} onChange={(event) => setNext(event.target.value)} /></label>
+            <label>Confirm new passphrase for this file<input type="password" autoComplete="new-password" maxLength={1024} value={confirmation} disabled={busy} onChange={(event) => setConfirmation(event.target.value)} /></label></>}
+        {error && <p className="danger-text" role="alert">{error}</p>}</div>
       <div className="button-row"><button className="btn" type="button" disabled={busy} onClick={close}>Cancel</button><button className="btn btn-primary" type="submit" disabled={busy}>Import vault</button></div>
     </form></div></div>;
 }

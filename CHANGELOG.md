@@ -20,6 +20,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- Import vault can open a file with three recovery shares from one set instead of its passphrase. You choose a new passphrase for it in the same dialog; the file is saved re-wrapped for that passphrase, its encrypted contents and vault ID stay the same, and the same shares keep recovering it. Share errors name the line, and nothing is replaced until the shares open the file and you confirm.
 - A test that checks every sideways-scrolling table and the drawer value are labeled regions reachable with the keyboard.
 - Automated accessibility tests that run axe-core against the Status, Secrets, Keys, Leases and Audit sections and the open secret drawer, using the WCAG 2 A and AA rules. They found no violations, so no interface changes were needed. Color contrast is not covered because jsdom cannot compute colors.
 
