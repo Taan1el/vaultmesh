@@ -1,5 +1,5 @@
 import { webcrypto } from 'node:crypto';
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, configure, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { LocalVault } from './LocalVault';
@@ -9,6 +9,11 @@ import { axe } from '../test/axe';
 const storage = vi.hoisted(() => ({ load: vi.fn(), save: vi.fn(), download: vi.fn() }));
 vi.mock('./workspace', async (original) => ({ ...await original<object>(), loadWorkspaceSnapshot: storage.load, saveWorkspace: storage.save }));
 vi.mock('./files', () => ({ downloadFile: storage.download }));
+// Every create, unlock, rotate and import runs PBKDF2 at the real 600,000 iterations, which can take several
+// seconds on a slow or busy machine. Wait for results longer than Testing Library's 1 second default, and give
+// each test room for the several derivations it runs, instead of lowering the cost the product uses.
+configure({ asyncUtilTimeout: 15_000 });
+const KDF_TEST_TIMEOUT = 60_000;
 const phrase = 'synthetic page passphrase';
 function change(label: string, value: string) { fireEvent.change(screen.getByLabelText(label, { exact: true }), { target: { value } }); }
 async function open(file: VaultFile | null = null) {
@@ -30,7 +35,7 @@ beforeEach(() => {
 });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.useRealTimers(); });
 
-describe('local encrypted notebook', () => {
+describe('local encrypted notebook', { timeout: KDF_TEST_TIMEOUT }, () => {
   it('creates a saved vault, encrypts entries and exports only ciphertext', async () => {
     await open(); await create(); await add();
     expect(storage.save.mock.calls[0][1]).toEqual({ expectedRevision: 0 });
