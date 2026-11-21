@@ -4,6 +4,9 @@ import { webcrypto } from 'node:crypto';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { VaultFile } from './vault';
 
+// Each test creates, re-keys and reopens a vault with PBKDF2 at the real 600,000 iterations, which can take more
+// than the 5 second default on a slow or busy machine.
+vi.setConfig({ testTimeout: 60_000 });
 const oldPhrase = 'synthetic old passphrase'; const newPhrase = 'synthetic new passphrase';
 beforeEach(() => { vi.resetModules(); vi.restoreAllMocks(); vi.stubGlobal('indexedDB', new IDBFactory()); vi.stubGlobal('crypto', webcrypto); });
 

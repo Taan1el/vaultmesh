@@ -28,7 +28,8 @@ beforeAll(async () => {
   html = await readFile(path.join(output, 'index.html'), 'utf8');
   worker = await readFile(path.join(output, 'sw.js'), 'utf8');
   files = await listFiles(output);
-}, 30_000);
+  // A full production build of the pages bundle; give it room on a slow or busy machine.
+}, 120_000);
 
 afterAll(async () => {
   if (!output) return;

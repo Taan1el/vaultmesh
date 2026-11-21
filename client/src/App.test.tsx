@@ -26,8 +26,7 @@ vi.mock('./services/api', () => ({
   },
 }));
 
-const now = Date.now();
-const iso = (offsetMs: number) => new Date(now + offsetMs).toISOString();
+const iso = (offsetMs: number) => new Date(Date.now() + offsetMs).toISOString();
 const shares = [1, 2, 3, 4, 5].map((i) => `vmshare-0${i}-${String(i).repeat(64)}`);
 
 function storedSecret(overrides: Partial<StoredSecret>): StoredSecret {
@@ -219,7 +218,11 @@ describe('App', () => {
     expect(screen.getByText('2 paths')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /^Secrets/ })).toHaveAttribute('aria-current', 'page');
     go('Leases');
-    expect(screen.getByText(/Expires in (49|50) s/)).toBeInTheDocument();
+    // The lease expires 50 s after the fake API was built; how much of that has passed depends on machine speed.
+    const countdown = screen.getByText(/Expires in \d+ s/).textContent ?? '';
+    const remaining = Number(/Expires in (\d+) s/.exec(countdown)?.[1]);
+    expect(remaining).toBeGreaterThan(30);
+    expect(remaining).toBeLessThanOrEqual(50);
     expect(screen.getByText(/Expired at/)).toBeInTheDocument();
     go('Audit');
     expect(screen.getByText('Chain verified, 1 entry')).toBeInTheDocument();

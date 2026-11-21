@@ -24,6 +24,9 @@ async function create() {
   change('Passphrase', phrase); change('Confirm passphrase', phrase);
   fireEvent.click(screen.getByRole('button', { name: 'Create vault' }));
   await screen.findByText('Vault unlocked.');
+  // The status text shows on commit, but the effect that attaches the hide and idle lock listeners can still be
+  // pending. Flush it so a test that dispatches visibilitychange right away does not race it.
+  await act(async () => {});
 }
 async function add() {
   change('Secret path', 'synthetic/path'); change('Secret value', 'synthetic plaintext');

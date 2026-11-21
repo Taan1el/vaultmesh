@@ -4,6 +4,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { checksumHex, splitSecret } from '../../../shared/shamir';
 import { createVault, KDF_ITERATIONS, MAX_VAULT_BYTES, parseVault, putEntry, recoverVault, recoveryShares, rekeyVault, rotatePassphrase, sealData, serializeVault, unlockVault } from './vault';
 
+// Most tests here run PBKDF2 at the real 600,000 iterations several times, which can take more than the 5 second
+// default on a slow or busy machine. Raise the budget for this file instead of lowering the cost under test.
+vi.setConfig({ testTimeout: 60_000 });
 const phrase = 'synthetic long passphrase';
 beforeEach(() => vi.stubGlobal('crypto', webcrypto));
 afterEach(() => vi.unstubAllGlobals());

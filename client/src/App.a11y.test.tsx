@@ -103,7 +103,8 @@ async function renderLoaded() {
   return { container, user, go };
 }
 
-describe('accessibility', () => {
+// axe walks the whole rendered page in jsdom, which can pass the 5 second default on a busy machine.
+describe('accessibility', { timeout: 30_000 }, () => {
   it.each(['Status', 'Secrets', 'Keys', 'Leases', 'Audit'])('has no violations on the %s section', async (section) => {
     const { container, go } = await renderLoaded();
     await go(section);
